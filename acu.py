@@ -74,7 +74,7 @@ def inject(cmd):
 
 def get_azel():
     try:
-        return read_shm(AZOFFSET, 1, 'f'), read_shm(ELOFFSET, 1, 'f')
+        return read_shm(AZOFFSET)[0], read_shm(ELOFFSET)[0]
     except NameError:
         return ant.get_azel()
 
