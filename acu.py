@@ -215,6 +215,7 @@ class RFIScanner:
 def scan(start, coords, filename):
     rs = RFIScanner()
     rs.move(*start)
+    time.sleep(2)
     rs.aquire(filename)
     for pos in coords:
         rs.move_rel(*pos)
@@ -230,7 +231,7 @@ coords = [[('el', 1, 1),('az', 2, q), ('el', 1, 1),('az',-2, q)] for q in azspee
 #    print(f'{n:02d} {x}')
 coords = [q for sublist in coords for q in sublist]
 
-coords = [('el', 1, 1),('az', 10, .1), ('el', 1, 1),('az',-10, .1)]*10
+coords = [('el', 1, 1),('az', 10, .2), ('el', 1, 1),('az',-10, .2)]*10
 
 if __name__ == '__main__':
     filename = 'neu.h5'
