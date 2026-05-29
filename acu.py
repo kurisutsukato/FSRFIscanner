@@ -203,6 +203,7 @@ class RFIScanner:
     def activate(self):
         log.info('activating')
         inject('antenna=ACTI')
+        time.sleep(1)
 
     def stop(self):
         self.slew(0,0)
