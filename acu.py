@@ -214,6 +214,7 @@ class RFIScanner:
 
 def scan(start, coords, filename):
     rs = RFIScanner()
+    rs.activate()
     rs.move(*start)
     time.sleep(2)
     rs.aquire(filename)
