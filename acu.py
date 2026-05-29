@@ -25,8 +25,8 @@ try:
 except ImportError:
     pass
 else:
-    AZOFFSET = os.environ['AZOFFSET']
-    ELOFFSET = os.environ['ELOFFSET']
+    AZOFFSET = int(os.environ['AZOFFSET'])
+    ELOFFSET = int(os.environ['ELOFFSET'])
 
 import re
 
