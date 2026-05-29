@@ -204,11 +204,9 @@ class RFIScanner:
         inject('antenna=ACTI')
         time.sleep(1)
 
-    def stop(self):
-        self.slew(0,0)
-
     def deactivate(self):
         log.info('deactivating')
+        time.sleep(0.5)
         inject('antenna=STAN')
 
 
