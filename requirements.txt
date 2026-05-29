@@ -1,0 +1,7 @@
+pandas
+dash
+numpy
+scipy
+h5py
+cffi
+dotenv
