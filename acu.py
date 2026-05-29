@@ -13,6 +13,9 @@ import h5py
 import logging
 import sys
 
+import dotenv
+dotenv.load_dotenv()
+
 log = logging.getLogger('track')
 fmt = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=fmt)
