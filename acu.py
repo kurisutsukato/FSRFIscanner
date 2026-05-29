@@ -126,7 +126,6 @@ class RFIScanner:
         self.el_real = 0
 
     def exit(self, signum, frame):
-        self.deactivate()
         self.stop()
         sys.exit()
 
@@ -222,6 +221,7 @@ def scan(start, coords, filename):
     for pos in coords:
         rs.move_rel(*pos)
         log.info(f'{get_azel()}')
+    rs.stop()
 
 el = np.linspace(0,np.pi/2,89)[::2]
 az = 1/np.cos(el)
