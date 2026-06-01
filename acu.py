@@ -241,7 +241,9 @@ coords = [('el', 1, 1),('az', 10, .2), ('el', 1, 1),('az',-10, .2)]*10
 
 if __name__ == '__main__':
     #scan((0,60),coords[120:], 'neu.h5')
-    scan((0,20),coords, 'neu.h5')
+    i = raw_input("are you sure")
+    if i == 'y':
+        scan((0,20),coords, 'neu.h5')
 
 
 
