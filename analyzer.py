@@ -105,7 +105,8 @@ class Measurement:
         try:
             rm = pyvisa.ResourceManager()
             sa = rm.open_resource(device)
-        except:
+        except Exception as e:
+            print(e)
             sa = VISADummy(self.pts)
 
         sa.timeout = 20000
