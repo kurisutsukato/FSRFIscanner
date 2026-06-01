@@ -113,6 +113,7 @@ def acquisition_loop(h5file, ts_dset, az_dset, el_dset):
         sleep_time = max(0, period - dt)
         time.sleep(sleep_time)
 
+
     with write_lock:
         h5file.flush()
 

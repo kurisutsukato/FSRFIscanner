@@ -4,6 +4,7 @@ import h5py
 import time
 from datetime import datetime, timezone
 import warnings
+import re
 
 warnings.filterwarnings("ignore")
 
@@ -12,6 +13,15 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__file__)
 
 logging.getLogger("pyvisa").disabled = True
+
+class Config(dict):
+    def __init__(self, filename):
+        for row in open(filename):
+            mat = re.match(r'(\S+)\s*=\s*(\S+)', row.strip())
+            if mat:
+                k,v = mat.groups()
+                self[k.lower()] = int(v)
+
 
 class VISADummy(object):
     def __init__(self, pts):
@@ -32,7 +42,7 @@ class VISADummy(object):
         return np.sin(np.linspace(0,100,self.pts)+time.time())
 
 class Measurement:
-    def __init__(self, filename, start_freq, stop_freq, pts, rbw=10, maxhold=10):
+    def __init__(self, filename, start_freq=70, stop_freq=670, points=101, rbw=10, maxhold=10):
         '''
         :param filename: filename
         :param start_freq: start frequency (MHz)
@@ -47,7 +57,7 @@ class Measurement:
         self.filename = filename
         self.start_freq = start_freq*1e6
         self.stop_freq = stop_freq*1e6
-        self.pts = pts
+        self.pts = points
         self.rbw = rbw*1e6
         self.maxhold = maxhold
 
@@ -60,10 +70,10 @@ class Measurement:
 
         h5_spec = grp_spec.require_dataset(
             "spectrum",
-            shape=(0,POINTS),
-            maxshape=(None,POINTS),
+            shape=(0,self.pts),
+            maxshape=(None,self.pts),
             dtype="float32",
-            chunks=(1024,POINTS)
+            chunks=(1024,self.pts)
         )
 
         h5_ts = grp_spec.require_dataset(
@@ -104,8 +114,8 @@ class Measurement:
 
         sa.write("*RST")
 
-        sa.write(f"SWE:POIN {POINTS}")
-        sa.write(f"BAND {RBW}")
+        sa.write(f"SWE:POIN {self.pts}")
+        sa.write(f"BAND {self.rbw}")
         sa.write("INIT:CONT ON")
 
         sa.write("DET SAMPLE")
@@ -116,14 +126,14 @@ class Measurement:
 
         sa.write("FORM REAL,32")
 
-        sa.write(f"FREQ:STAR {START_FREQ}")
-        sa.write(f"FREQ:STOP {STOP_FREQ}")
+        sa.write(f"FREQ:STAR {self.start_freq}")
+        sa.write(f"FREQ:STOP {self.stop_freq}")
 
         try:
             while True:
                 sa.write("INIT:CONT ON")
 
-                time.sleep(maxhold_time)
+                time.sleep(self.maxhold)
                 sa.write("INIT:CONT OFF")
                 sa.write("TRAC:CLE")
 
@@ -156,13 +166,16 @@ class Measurement:
             self.close_hdf5()
 
 if __name__ == "__main__":
+    import argparse
 
-    START_FREQ = 1000
-    STOP_FREQ = 2000
-    POINTS = 101
+    parser = argparse.ArgumentParser()
 
-    RBW = 10
-    maxhold_time = 10
+    parser.add_argument("config_file", type=str)
+    parser.add_argument("output_file", type=str)
 
-    m = Measurement('test.h5', START_FREQ, STOP_FREQ, POINTS, RBW, maxhold_time)
+    args = parser.parse_args()
+
+    config = Config(args.config_file)
+
+    m = Measurement(args.output_file, **config)
     m.run("TCPIP0::10.10.10.152::INSTR")
