@@ -30,53 +30,49 @@ else:
 
 import re
 
-try:
-    subprocess.call(['inject_snap', 'wx'])
-except FileNotFoundError:
+class Antenna:
+    def __init__(self, simulation=True):
+        self.simulation = simulation
+        self.az = 0
+        self.el = 0
+        self.azspeed = 0
+        self.elspeed = 0
+        self.t0 = time.monotonic()
 
-    class Antenna:
-        def __init__(self, simulation=True):
-            self.simulation = simulation
-            self.az = 0
-            self.el = 0
-            self.azspeed = 0
-            self.elspeed = 0
-            self.t0 = time.monotonic()
+        if simulation:
+            log.info('using dummy ACU')
+        else:
+            log.info('taking control over the ACU')
 
-            if simulation:
-                log.info('using dummy ACU')
-            else:
-                log.info('taking control over the ACU')
-
-        def execute(self, cmd):
-            if self.simulation:
-                mat = re.match(r'antenna=(\w+),([-\d\.]+),([-\d\.]+)', cmd)
-                log.info(f'dummy ACU received {cmd}')
-                if mat is not None:
-                    cmd, a, e = mat.groups()
-                    if cmd == 'PRES':
-                        self.az = float(a)
-                        self.el = float(e)
-                    elif cmd == 'SLEW':
-                        self.azspeed = float(a)
-                        self.elspeed = float(e)
-                        self.t0 = time.monotonic()
-                    else:
-                        log.error(f'unknown dummy ACU command {cmd}')
+    def execute(self, cmd):
+        if self.simulation:
+            mat = re.match(r'antenna=(\w+),([-\d\.]+),([-\d\.]+)', cmd)
+            log.info(f'dummy ACU received {cmd}')
+            if mat is not None:
+                cmd, a, e = mat.groups()
+                if cmd == 'PRES':
+                    self.az = float(a)
+                    self.el = float(e)
+                elif cmd == 'SLEW':
+                    self.azspeed = float(a)
+                    self.elspeed = float(e)
+                    self.t0 = time.monotonic()
                 else:
-                    log.error(f'dummy ACU: command not implemented: {cmd}')
+                    log.error(f'unknown dummy ACU command {cmd}')
             else:
-                subprocess.call(['inject_snap', cmd])
+                log.error(f'dummy ACU: command not implemented: {cmd}')
+        else:
+            subprocess.call(['inject_snap', cmd])
 
-        def get_azel(self):
-            if self.simulation:
-                now = time.monotonic()
-                self.az += self.azspeed * (now - self.t0)
-                self.el += self.elspeed * (now - self.t0)
-                self.t0 = now
-                return self.az, self.el
-            else:
-                return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
+    def get_azel(self):
+        if self.simulation:
+            now = time.monotonic()
+            self.az += self.azspeed * (now - self.t0)
+            self.el += self.elspeed * (now - self.t0)
+            self.t0 = now
+            return self.az, self.el
+        else:
+            return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
 
 stop_event = threading.Event()
 write_lock = threading.Lock()
