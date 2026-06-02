@@ -5,5 +5,3 @@ scipy
 h5py
 cffi
 dotenv
-healpy
-jupyterlab

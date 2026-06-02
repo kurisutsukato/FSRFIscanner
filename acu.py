@@ -113,6 +113,7 @@ def acquisition_loop(h5file, ts_dset, az_dset, el_dset):
         sleep_time = max(0, period - dt)
         time.sleep(sleep_time)
 
+
     with write_lock:
         h5file.flush()
 
@@ -129,9 +130,15 @@ class RFIScanner:
         self.stop()
         sys.exit()
 
-    def aquire(self, filename):
+    def aquire(self, filename, append=False):
         if filename.split('.')[-1] != 'h5':
             filename = filename + '.h5'
+
+        if not append:
+            try:
+                os.unlink(filename)
+            except OSError:
+                pass
 
         self.h5 = h5py.File(filename, "a")
 
@@ -234,14 +241,10 @@ coords = [q for sublist in coords for q in sublist]
 coords = [('el', 1, 1),('az', 10, .2), ('el', 1, 1),('az',-10, .2)]*10
 
 if __name__ == '__main__':
-    filename = 'neu.h5'
-    import os
-    try:
-        os.unlink(filename)
-    except OSError:
-        pass
     #scan((0,60),coords[120:], 'neu.h5')
-    scan((0,20),coords, 'neu.h5')
+    i = raw_input("are you sure")
+    if i == 'y':
+        scan((0,20),coords, 'neu.h5')
 
 
 
