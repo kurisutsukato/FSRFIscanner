@@ -73,6 +73,8 @@ class Measurement:
             chunks=(1024,),
             dtype=np.int64
         )
+        h5_ts.attrs["unit"] = "miliseconds since Unix epoch"
+        h5_ts.attrs["timezone"] = "UTC"
 
         frequencies = np.linspace(self.start_freq, self.stop_freq, self.pts)
         if not 'frequencies' in self.h5.attrs:
