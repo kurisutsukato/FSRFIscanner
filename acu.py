@@ -246,7 +246,7 @@ if __name__ == '__main__':
 
     tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
     start, coords = load_cnf(args.filename)
-    name = os.path.basename(args.filename)
+    name = os.path.basename(args.filename).split('.')[0]
 
     scan(start, coords, f'{tstr}_{name}.h5', simulation=not args.nosim)
 
