@@ -5,3 +5,5 @@ scipy
 h5py
 cffi
 dotenv
+pyvisa-py
+jupyterlab
