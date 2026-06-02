@@ -180,5 +180,7 @@ if __name__ == "__main__":
 
     config = Config(args.config_file)
 
-    m = Measurement(args.output_file, **config)
+    tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+    outfile = f'{tstr}_{args.output_file}'
+    m = Measurement(outfile, **config)
     m.run("TCPIP0::10.10.10.152::INSTR")

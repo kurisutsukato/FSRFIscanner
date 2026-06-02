@@ -30,59 +30,58 @@ else:
 
 import re
 
-class Antenna:
-    def __init__(self, az, el):
-        self.az = 0
-        self.el = 0
-        self.azspeed = 0
-        self.elspeed = 0
-        self.t0 = time.monotonic()
+try:
+    subprocess.call(['inject_snap', 'wx'])
+except FileNotFoundError:
 
-        log.info('using dummy ACU')
+    class Antenna:
+        def __init__(self, simulation=True):
+            self.simulation = simulation
+            self.az = 0
+            self.el = 0
+            self.azspeed = 0
+            self.elspeed = 0
+            self.t0 = time.monotonic()
 
-    def execute(self, cmd):
-        mat = re.match(r'antenna=(\w+),([-\d\.]+),([-\d\.]+)', cmd)
-        log.info(f'antenna received {cmd}')
-        if mat is not None:
-            cmd, a, e = mat.groups()
-            if cmd == 'PRES':
-                self.az = float(a)
-                self.el = float(e)
-            elif cmd == 'SLEW':
-                self.azspeed = float(a)
-                self.elspeed = float(e)
-                self.t0 = time.monotonic()
+            if simulation:
+                log.info('using dummy ACU')
             else:
-                log.error(f'unknown antenna command {cmd}')
-        else:
-            log.error(f'not understood')
+                log.info('taking control over the ACU')
 
-    def get_azel(self):
-        now = time.monotonic()
-        self.az += self.azspeed * (now - self.t0)
-        self.el += self.elspeed * (now - self.t0)
-        self.t0 = now
-        return self.az, self.el
+        def execute(self, cmd):
+            if self.simulation:
+                mat = re.match(r'antenna=(\w+),([-\d\.]+),([-\d\.]+)', cmd)
+                log.info(f'dummy ACU received {cmd}')
+                if mat is not None:
+                    cmd, a, e = mat.groups()
+                    if cmd == 'PRES':
+                        self.az = float(a)
+                        self.el = float(e)
+                    elif cmd == 'SLEW':
+                        self.azspeed = float(a)
+                        self.elspeed = float(e)
+                        self.t0 = time.monotonic()
+                    else:
+                        log.error(f'unknown dummy ACU command {cmd}')
+                else:
+                    log.error(f'dummy ACU: command not implemented: {cmd}')
+            else:
+                subprocess.call(['inject_snap', cmd])
 
-ant = Antenna(0,0)
-
-def inject(cmd):
-    try:
-        subprocess.call(['inject_snap', cmd])
-    except OSError:
-        ant.execute(cmd)
-
-def get_azel():
-    try:
-        return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
-    except NameError:
-        return ant.get_azel()
-
+        def get_azel(self):
+            if self.simulation:
+                now = time.monotonic()
+                self.az += self.azspeed * (now - self.t0)
+                self.el += self.elspeed * (now - self.t0)
+                self.t0 = now
+                return self.az, self.el
+            else:
+                return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
 
 stop_event = threading.Event()
 write_lock = threading.Lock()
 
-def acquisition_loop(h5file, ts_dset, az_dset, el_dset):
+def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
     period = 0.1  # seconds
 
     while not stop_event.is_set():
@@ -118,7 +117,8 @@ def acquisition_loop(h5file, ts_dset, az_dset, el_dset):
         h5file.flush()
 
 class RFIScanner:
-    def __init__(self):
+    def __init__(self, antenna):
+        self.ant = antenna
         signal.signal(signal.SIGINT, self.exit)
         signal.signal(signal.SIGTERM, self.exit)
         self.running = True
@@ -151,7 +151,7 @@ class RFIScanner:
 
         self.thread = threading.Thread(
             target=acquisition_loop,
-            args=(self.h5, ts_dset, az_dset, el_dset),
+            args=(self.ant.get_azel, self.h5, ts_dset, az_dset, el_dset),
             daemon=True,
         )
 
@@ -164,19 +164,19 @@ class RFIScanner:
 
     def move(self, azcmd, elcmd):
         log.info(f'moving to {azcmd}/{elcmd}')
-        inject(f'antenna=PRES,{azcmd},{elcmd}')
+        self.ant.execute(f'antenna=PRES,{azcmd},{elcmd}')
 
         while True:
-            az, el = get_azel()
+            az, el = self.ant.get_azel()
             if abs(az - azcmd) < 0.2 and abs(el - elcmd) < 0.2:
                 break
             time.sleep(0.5)
-        az, el = get_azel()
+        az, el = self.ant.get_azel()
         self.az_real, self.el_real = az, el
 
     def move_rel(self, dir, delta, speed=0.1):
         speed = speed if delta > 0 else -speed
-        tmp = np.asarray(get_azel()) - np.array([self.az_real, self.el_real])
+        tmp = np.asarray(self.ant.get_azel()) - np.array([self.az_real, self.el_real])
         corr = tmp[0] if dir == 'az' else tmp[1]
         delta_corr = delta-corr
 
@@ -204,47 +204,51 @@ class RFIScanner:
 
     def slew(self, az=0, el=0):
         log.info(f'slewing {az}/{el}')
-        inject(f'antenna=SLEW,{az},{el}')
+        self.ant.execute(f'antenna=SLEW,{az},{el}')
 
     def activate(self):
         log.info('activating')
-        inject('antenna=ACTI')
+        self.ant.execute('antenna=ACTI')
         time.sleep(1)
 
     def deactivate(self):
         log.info('deactivating')
         time.sleep(0.5)
-        inject('antenna=STAN')
+        self.ant.execute('antenna=STAN')
 
 
-def scan(start, coords, filename):
-    rs = RFIScanner()
+def scan(start, coords, filename, simulation=True):
+    rs = RFIScanner(Antenna(simulation=simulation))
     rs.activate()
     rs.move(*start)
     time.sleep(2)
     rs.aquire(filename)
     for pos in coords:
         rs.move_rel(*pos)
-        log.info(f'{get_azel()}')
+        log.info(f'{rs.ant.get_azel()}')
     rs.stop()
 
-el = np.linspace(0,np.pi/2,89)[::2]
-az = 1/np.cos(el)
-azspeed = az*0.1
-azspeed[azspeed>3] = 2
 
-coords = [[('el', 1, 1),('az', 2, q), ('el', 1, 1),('az',-2, q)] for q in azspeed.tolist()]
-#for n,x in enumerate(coords):
-#    print(f'{n:02d} {x}')
-coords = [q for sublist in coords for q in sublist]
-
-coords = [('el', 1, 1),('az', 10, .2), ('el', 1, 1),('az',-10, .2)]*10
+def load_cnf(filename):
+    with open(filename) as f:
+        a,b = f.readline().strip().split(',')
+        return (int(a),int(b)),[(k, float(l), float(m)) for row in f for k, l, m in [row.strip().split(',')]
+]
 
 if __name__ == '__main__':
-    #scan((0,60),coords[120:], 'neu.h5')
-    i = raw_input("are you sure")
-    if i == 'y':
-        scan((0,20),coords, 'neu.h5')
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('filename', help='config file')
+    parser.add_argument('--nosim', action='store_true', default=False, help='disable simulation mode')
+    args = parser.parse_args()
+
+    tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+    start, coords = load_cnf(args.filename)
+    name = os.path.basename(args.filename)
+
+    scan(start, coords, f'{tstr}_{name}.h5', simulation=not args.nosim)
 
 
 
