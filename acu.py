@@ -177,13 +177,13 @@ class RFIScanner:
         log.info(f'actual position: {apos}')
 
         tmp = apos - np.array([self.az_real, self.el_real])
-        log.info(f'diff with thoretical position {tmp}')
+        log.info(f'diff with theoretical position {tmp}')
         corr = tmp[0] if dir == 'az' else tmp[1]
         if abs(corr) > 10:
             log.info('azimuth overrun detected')
             corr = corr%360
         delta_corr = delta-corr
-        log.info(f'correction {delta_corr}')
+        log.info(f'moving by {delta_corr}')
 
         log.info(f'slewing in {dir} direction with speed {speed}')
         t0 = time.monotonic()
