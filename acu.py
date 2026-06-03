@@ -168,6 +168,7 @@ class RFIScanner:
                 break
             time.sleep(0.5)
         az, el = self.ant.get_azel()
+        log.info(f'reached {az}/{el}')
         self.az_real, self.el_real = az, el
 
     def move_rel(self, dir, delta, speed=0.1):
@@ -176,6 +177,7 @@ class RFIScanner:
         log.info(f'actual position: {apos}')
 
         tmp = apos - np.array([self.az_real, self.el_real])
+        log.info(f'diff with thoretical position {tmp}')
         corr = tmp[0] if dir == 'az' else tmp[1]
         if abs(corr) > 10:
             log.info('azimuth overrun detected')
