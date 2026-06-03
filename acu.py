@@ -172,19 +172,22 @@ class RFIScanner:
 
     def move_rel(self, dir, delta, speed=0.1):
         speed = speed if delta > 0 else -speed
-        tmp = np.asarray(self.ant.get_azel()) - np.array([self.az_real, self.el_real])
+        apos = np.asarray(self.ant.get_azel())
+        log.info(f'actual position: {apos}')
+        tmp = apos - np.array([self.az_real, self.el_real])
         corr = tmp[0] if dir == 'az' else tmp[1]
         delta_corr = delta-corr
-
+        log.info(f'correction {delta_corr}')
         log.info(f'slewing in {dir} direction with speed {speed}')
         t0 = time.monotonic()
-        tfinal = delta_corr / speed + t0
+        delta_t = .5 * speed + delta_corr / speed
+        tfinal = t0 + delta_t
 
         azspeed = speed if dir == 'az' else 0
         elspeed = speed if dir == 'el' else 0
         self.slew(azspeed, elspeed)
 
-        log.info(f'waiting for {delta_corr/speed} seconds')
+        log.info(f'waiting for {delta_t} seconds')
 
         while True:
             now = time.monotonic()

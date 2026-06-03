@@ -1,11 +1,12 @@
 import numpy as np
+import sys
 
 el = np.linspace(0,np.pi/2,88)[2::2]
 az = 1/np.cos(el)
-azspeed = az*0.1
+azspeed = az*0.5
 azspeed[azspeed>3] = 3
 
-coords = [[('az', 2, f'{q:.2f}'), ('el', 1, 1),('az',-2, f'{q:.2f}'), ('el', 1, 1)] for q in azspeed.tolist()]
+coords = [[('az', 360, f'{q:.2f}'), ('el', 1, .1),('az',-360, f'{q:.2f}'), ('el', 1, .1)] for q in azspeed.tolist()]
 #for n,x in enumerate(coords):
 #    print(f'{n:02d} {x}')
 coords = np.asarray([q for sublist in coords for q in sublist])
@@ -16,7 +17,6 @@ for a,b,c in coords:
     if a == 'el':
         tot += float(b)
 print(tot)
-print('0,2', file=open('fullsky.cnf','w'))
-with open('fullsky.cnf','a') as f:
-    np.savetxt(f, coords, fmt="%s", delimiter=',')
+print('0,2')
+np.savetxt(sys.stdout, coords, fmt="%s", delimiter=',')
 
