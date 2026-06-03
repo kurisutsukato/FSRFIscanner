@@ -177,7 +177,9 @@ class RFIScanner:
 
         tmp = apos - np.array([self.az_real, self.el_real])
         corr = tmp[0] if dir == 'az' else tmp[1]
-        corr %= 360 if dir == 'az' else corr
+        if abs(corr) > 10:
+            log.info('azimuth overrun detected')
+            corr = corr%360
         delta_corr = delta-corr
         log.info(f'correction {delta_corr}')
 
