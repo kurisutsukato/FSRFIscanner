@@ -174,10 +174,12 @@ class RFIScanner:
         speed = speed if delta > 0 else -speed
         apos = np.asarray(self.ant.get_azel())
         log.info(f'actual position: {apos}')
+
         tmp = apos - np.array([self.az_real, self.el_real])
         corr = tmp[0] if dir == 'az' else tmp[1]
         delta_corr = delta-corr
         log.info(f'correction {delta_corr}')
+
         log.info(f'slewing in {dir} direction with speed {speed}')
         t0 = time.monotonic()
         delta_t = .5 * speed + delta_corr / speed

@@ -17,6 +17,8 @@ for a,b,c in coords:
     if a == 'el':
         tot += float(b)
 print(tot)
-print('0,2')
-np.savetxt(sys.stdout, coords, fmt="%s", delimiter=',')
+
+with open(sys.argv[1], 'w') as f:
+    print('0,2', file=f)
+    np.savetxt(f, coords, fmt="%s", delimiter=',')
 
