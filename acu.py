@@ -176,6 +176,13 @@ class RFIScanner:
         apos = np.asarray(self.ant.get_azel())
         log.info(f'actual position: {apos}')
 
+        log.info(f'slewing in {dir} direction with speed {speed}')
+        azspeed = speed if dir == 'az' else 0
+        elspeed = speed if dir == 'el' else 0
+        self.slew(azspeed, elspeed)
+
+        time.sleep(1)
+
         tmp = apos - np.array([self.az_real, self.el_real])
         log.info(f'diff with theoretical position {tmp}')
         corr = tmp[0] if dir == 'az' else tmp[1]
@@ -185,14 +192,9 @@ class RFIScanner:
         delta_corr = delta-corr
         log.info(f'moving by {delta_corr}')
 
-        log.info(f'slewing in {dir} direction with speed {speed}')
         t0 = time.monotonic()
         delta_t = .5 * speed + delta_corr / speed
         tfinal = t0 + delta_t
-
-        azspeed = speed if dir == 'az' else 0
-        elspeed = speed if dir == 'el' else 0
-        self.slew(azspeed, elspeed)
 
         log.info(f'waiting for {delta_t} seconds')
 
