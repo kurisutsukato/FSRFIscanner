@@ -194,7 +194,7 @@ class RFIScanner:
 
         t0 = time.monotonic()
         delta_t = .5 * speed + delta_corr / speed
-        tfinal = t0 + delta_t
+        tfinal = t0 + delta_t - 1
 
         log.info(f'waiting for {delta_t} seconds')
 
