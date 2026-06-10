@@ -1,13 +1,14 @@
 
 import subprocess
 from datetime import datetime, timezone
+import re
+import numpy as np
 
 import threading
 import time
 import signal
 import os
 
-import numpy as np
 import h5py
 
 import logging
@@ -28,58 +29,14 @@ else:
     AZOFFSET = int(os.environ['AZOFFSET'])
     ELOFFSET = int(os.environ['ELOFFSET'])
 
-import re
-
-class Antenna:
-    def __init__(self, simulation=True):
-        self.simulation = simulation
-        self.az = 0
-        self.el = 0
-        self.azspeed = 0
-        self.elspeed = 0
-        self.t0 = time.monotonic()
-
-        if simulation:
-            log.info('using dummy ACU')
-        else:
-            log.info('taking control over the ACU')
-
-    def execute(self, cmd):
-        if self.simulation:
-            mat = re.match(r'antenna=(\w+),([-\d\.]+),([-\d\.]+)', cmd)
-            log.info(f'dummy ACU received {cmd}')
-            if mat is not None:
-                cmd, a, e = mat.groups()
-                if cmd == 'PRES':
-                    self.az = float(a)
-                    self.el = float(e)
-                elif cmd == 'SLEW':
-                    self.azspeed = float(a)
-                    self.elspeed = float(e)
-                    self.t0 = time.monotonic()
-                else:
-                    log.error(f'unknown dummy ACU command {cmd}')
-            else:
-                log.error(f'dummy ACU: command not implemented: {cmd}')
-        else:
-            subprocess.call(['inject_snap', cmd])
-
-    def get_azel(self):
-        if self.simulation:
-            now = time.monotonic()
-            self.az += self.azspeed * (now - self.t0)
-            self.el += self.elspeed * (now - self.t0)
-            self.t0 = now
-            return self.az, self.el
-        else:
-            return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
 
 stop_event = threading.Event()
 write_lock = threading.Lock()
 
 def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
-    period = 0.1  # seconds
+    period = 0.02  # seconds
 
+    count = 0
     while not stop_event.is_set():
         t0 = time.monotonic()
 
@@ -88,41 +45,55 @@ def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
         dt = datetime.now(timezone.utc)
         timestamp = int(dt.timestamp()*1000)
 
-        with write_lock:
-            n = ts_dset.shape[0]
+        if count == 4:
+            count = 0
+            with write_lock:
+                n = ts_dset.shape[0]
 
-            # extend dataset by one row
-            ts_dset.resize(n + 1, axis=0)
-            az_dset.resize(n + 1, axis=0)
-            el_dset.resize(n + 1, axis=0)
+                # extend dataset by one row
+                ts_dset.resize(n + 1, axis=0)
+                az_dset.resize(n + 1, axis=0)
+                el_dset.resize(n + 1, axis=0)
 
-            # store structured entry
-            ts_dset[n] = timestamp
-            az_dset[n] = az
-            el_dset[n] = el
+                # store structured entry
+                ts_dset[n] = timestamp
+                az_dset[n] = az
+                el_dset[n] = el
 
-            # optional:
-            h5file.flush()
+                # optional:
+                h5file.flush()
 
         dt = time.monotonic() - t0
         sleep_time = max(0, period - dt)
         time.sleep(sleep_time)
-
+        count += 1
 
     with write_lock:
         h5file.flush()
 
-class RFIScanner:
-    def __init__(self, antenna):
-        self.ant = antenna
-        signal.signal(signal.SIGINT, self.exit)
-        signal.signal(signal.SIGTERM, self.exit)
-        self.running = True
 
-        self.az_real = 0
-        self.el_real = 0
+class Antenna:
+    def __init__(self, simulation=True):
+        self.simulation = simulation
+        self.az_target = 0
+        self.el_target = 0
 
-    def exit(self, signum, frame):
+        self.az = 0
+        self.el = 0
+        self.az_speed = 0
+        self.el_speed = 0
+
+        self.t0 = time.monotonic()
+
+        if simulation:
+            log.info('using dummy ACU')
+        else:
+            log.info('taking control over the ACU')
+
+        signal.signal(signal.SIGINT, self._exit)
+        signal.signal(signal.SIGTERM, self._exit)
+
+    def _exit(self, signum, frame):
         self.stop()
         sys.exit()
 
@@ -147,7 +118,7 @@ class RFIScanner:
 
         self.thread = threading.Thread(
             target=acquisition_loop,
-            args=(self.ant.get_azel, self.h5, ts_dset, az_dset, el_dset),
+            args=(self.get_azel, self.h5, ts_dset, az_dset, el_dset),
             daemon=True,
         )
 
@@ -158,43 +129,42 @@ class RFIScanner:
         self.deactivate()
         self.thread.join()
 
-    def move(self, azcmd, elcmd):
+    def move_to(self, azcmd, elcmd):
         log.info(f'moving to {azcmd}/{elcmd}')
-        self.ant.execute(f'antenna=PRES,{azcmd},{elcmd}')
+        self.execute(f'antenna=PRES,{azcmd},{elcmd}')
 
         while True:
-            az, el = self.ant.get_azel()
-            if abs(az - azcmd) < 0.2 and abs(el - elcmd) < 0.2:
+            az, el = self.get_azel()
+            if abs(az - azcmd) < 0.1 and abs(el - elcmd) < 0.1:
                 break
-            time.sleep(0.5)
-        az, el = self.ant.get_azel()
+            time.sleep(0.2)
+        az, el = self.get_azel()
         log.info(f'reached {az}/{el}')
-        self.az_real, self.el_real = az, el
 
-    def move_rel(self, dir, delta, speed=0.1):
+        self.az_target, self.el_target = azcmd, elcmd
+
+    def move_rel(self, axis, delta, speed):
         speed = speed if delta > 0 else -speed
-        apos = np.asarray(self.ant.get_azel())
-        log.info(f'actual position: {apos}')
+        #apos = np.asarray(self.ant.get_azel())
+        #log.info(f'actual position: {apos}')
 
-        log.info(f'slewing in {dir} direction with speed {speed}')
-        azspeed = speed if dir == 'az' else 0
-        elspeed = speed if dir == 'el' else 0
-        self.slew(azspeed, elspeed)
-
-        time.sleep(1)
-
-        tmp = apos - np.array([self.az_real, self.el_real])
-        log.info(f'diff with theoretical position {tmp}')
-        corr = tmp[0] if dir == 'az' else tmp[1]
-        if abs(corr) > 10:
-            log.info('azimuth overrun detected')
-            corr = corr%360
-        delta_corr = delta-corr
-        log.info(f'moving by {delta_corr}')
+        #tmp = apos - np.array([self.az_target, self.el_target])
+        #log.info(f'diff with theoretical position {tmp}')
+        #corr = tmp[0] if dir == 'az' else tmp[1]
+        #if abs(corr) > 10:
+        #    log.info('azimuth overrun detected')
+        #    corr = corr%360
+        #delta_corr = delta-corr
+        #log.info(f'moving by {delta_corr}')
 
         t0 = time.monotonic()
-        delta_t = .5 * speed + delta_corr / speed
+        delta_t = delta / speed
         tfinal = t0 + delta_t
+
+        log.info(f'slewing in {axis} direction with speed {speed}')
+        azspeed = speed if axis == 'az' else 0
+        elspeed = speed if axis == 'el' else 0
+        self.slew(azspeed, elspeed)
 
         log.info(f'waiting for {delta_t} seconds')
 
@@ -205,36 +175,65 @@ class RFIScanner:
                 break
             time.sleep(0.01)
 
-        if dir == 'az':
-            self.az_real += delta
+        if axis == 'az':
+            self.move_to(self.az_target + delta, self.el_target)
         else:
-            self.el_real += delta
+            self.move_to(self.az_target, self.el_target + delta)
 
     def slew(self, az=0, el=0):
         log.info(f'slewing {az}/{el}')
-        self.ant.execute(f'antenna=SLEW,{az},{el}')
+        self.execute(f'antenna=SLEW,{az},{el}')
 
     def activate(self):
         log.info('activating')
-        self.ant.execute('antenna=ACTI')
+        self.execute('antenna=ACTI')
         time.sleep(1)
 
     def deactivate(self):
         log.info('deactivating')
         time.sleep(0.5)
-        self.ant.execute('antenna=STAN')
+        self.execute('antenna=STAN')
 
+    def execute(self, cmd):
+        if self.simulation:
+            mat = re.match(r'antenna=(\w+),([-\d\.]+),([-\d\.]+)', cmd)
+            log.info(f'dummy ACU received {cmd}')
+            if mat is not None:
+                cmd, a, e = mat.groups()
+                if cmd == 'PRES':
+                    self.az = float(a)
+                    self.el = float(e)
+                elif cmd == 'SLEW':
+                    self.azspeed = float(a)
+                    self.elspeed = float(e)
+                    self.t0 = time.monotonic()
+                else:
+                    log.error(f'unknown dummy ACU command {cmd}')
+            else:
+                log.error(f'dummy ACU: command not implemented: {cmd}')
+        else:
+            subprocess.call(['inject_snap', cmd])
+
+    def get_azel(self):
+        if self.simulation:
+            now = time.monotonic()
+            self.az += self.az_speed * (now - self.t0)
+            self.el += self.el_speed * (now - self.t0)
+            self.t0 = now
+            return self.az, self.el
+        else:
+            return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
 
 def scan(start, coords, filename, simulation=True):
-    rs = RFIScanner(Antenna(simulation=simulation))
-    rs.activate()
-    rs.move(*start)
+    ant = Antenna(simulation=simulation)
+    ant.activate()
+    ant.move_to(*start)
     time.sleep(2)
-    rs.aquire(filename)
+    ant.aquire(filename)
     for pos in coords:
-        rs.move_rel(*pos)
-        log.info(f'{rs.ant.get_azel()}')
-    rs.stop()
+        ant.move_rel(*pos)
+        log.info(f'{ant.get_azel()}')
+    ant.stop()
 
 
 def load_cnf(filename):

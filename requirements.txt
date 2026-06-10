@@ -1,5 +1,6 @@
 pandas
 dash
+dash-bootstrap-components
 numpy
 scipy
 h5py
