@@ -34,9 +34,8 @@ stop_event = threading.Event()
 write_lock = threading.Lock()
 
 def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
-    period = 0.02  # seconds
+    period = 0.1  # seconds
 
-    count = 0
     while not stop_event.is_set():
         t0 = time.monotonic()
 
@@ -45,28 +44,25 @@ def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
         dt = datetime.now(timezone.utc)
         timestamp = int(dt.timestamp()*1000)
 
-        if count == 4:
-            count = 0
-            with write_lock:
-                n = ts_dset.shape[0]
+        with write_lock:
+            n = ts_dset.shape[0]
 
-                # extend dataset by one row
-                ts_dset.resize(n + 1, axis=0)
-                az_dset.resize(n + 1, axis=0)
-                el_dset.resize(n + 1, axis=0)
+            # extend dataset by one row
+            ts_dset.resize(n + 1, axis=0)
+            az_dset.resize(n + 1, axis=0)
+            el_dset.resize(n + 1, axis=0)
 
-                # store structured entry
-                ts_dset[n] = timestamp
-                az_dset[n] = az
-                el_dset[n] = el
+            # store structured entry
+            ts_dset[n] = timestamp
+            az_dset[n] = az
+            el_dset[n] = el
 
-                # optional:
-                h5file.flush()
+            # optional:
+            h5file.flush()
 
         dt = time.monotonic() - t0
         sleep_time = max(0, period - dt)
         time.sleep(sleep_time)
-        count += 1
 
     with write_lock:
         h5file.flush()
@@ -204,8 +200,8 @@ class Antenna:
                     self.az = float(a)
                     self.el = float(e)
                 elif cmd == 'SLEW':
-                    self.azspeed = float(a)
-                    self.elspeed = float(e)
+                    self.az_speed = float(a)
+                    self.el_speed = float(e)
                     self.t0 = time.monotonic()
                 else:
                     log.error(f'unknown dummy ACU command {cmd}')
