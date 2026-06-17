@@ -8,7 +8,7 @@ def gen(plot={}, options={}):
         dbc.Tab(label='Data', children=[
             dcc.Interval(id="interval", interval=1000*30, n_intervals=0),
             dcc.Location(id="url", refresh=False),
-            dcc.Store(id='experiment', data={}),
+            dcc.Store(id='experiment', data={'acufile': None, 'specfile': None, 'id': None}),
 
             dcc.Loading(
                 id="acufile-loading",
@@ -40,6 +40,8 @@ def gen(plot={}, options={}):
                 ),
                 dcc.Loading(html.Div(id="info-specfile")),
             ], style={"display": "flex","gap": "10px", "padding": "10px"} ),
+            html.Label('Experiment'),
+            html.Div(id="info-experiment"),
         ]),
         dbc.Tab(label='Vis', children=[
             dcc.Store(id='last_range'),
