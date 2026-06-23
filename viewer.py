@@ -3,51 +3,26 @@ from dash import Dash, Input, Output, State, no_update, callback_context, Patch,
 import dash_bootstrap_components as dbc
 import pandas as pd
 from datetime import datetime, timezone
+from pathlib import Path
 
 from plotly import graph_objs as go
 import h5py
-from json import dumps, loads
 from glob import glob
-import uuid
 
 from applayout import gen
 
 experiment_cache = {}
 
-with h5py.File('20260603-181042_fullsky.h5', 'r') as f:
-    dfpos = pd.DataFrame({'ts': f['timestamp'][:], 'az': f['az'][:], 'el': f['el'][:]}).astype({'ts': np.int64})
+def plot(exp, xrng=None):
+    binned = experiment_cache[exp['foldername']]
 
-with h5py.File('20260603-180131_sband.h5', 'r') as f:
-    # spectra = f["spectra"]["spectrum"]          # shape (N, channels)
-    # ts_spec = pd.to_datetime(f["spectra"]["timestamp"][:], unit="ms")
-    ts = f["spectra"]["timestamp"][:]
-    freq = np.asarray(f.attrs['frequencies'][:])
-    dfspec = pd.DataFrame({"ts": ts, "spec_idx": range(len(ts))}).astype({'ts': np.int64})
+    azaxis = exp['azaxis']
+    elaxis = exp['elaxis']
 
-merged = pd.merge_asof(
-    dfspec,
-    dfpos,
-    on="ts",
-    direction="nearest",
-    tolerance=100  # adjust
-)
-
-merged.ts = merged.ts // 1000
-merged = merged.loc[merged.az.notna()]
-
-azbin = 6
-elbin = 2
-binned = merged.copy()
-binned['el'] = (binned['el'] / elbin + 0.5).astype(int)
-binned['az'] = (binned['az'] / azbin + .5).astype(int)
-binned = binned.loc[binned.az < 60]
-elaxis = np.arange(binned.el.min(), binned.el.max()+1)*elbin
-azaxis = np.arange(binned.az.min(), binned.az.max()+1)*azbin
-
-def plot(xrng=None):
     data = []
-    with h5py.File('20260603-180131_sband.h5', 'r') as f:
+    with h5py.File(exp['specfile'], 'r') as f:
         spectra = f['spectra']['spectrum']
+        freq = f.attrs['frequencies']
         for (az, el), df in binned.groupby(['el', 'az']):
             val = np.asarray(spectra[df['spec_idx'].values])
             if xrng is not None:
@@ -55,18 +30,27 @@ def plot(xrng=None):
                 val = val[:,a:b]
             data.append((az, el, val.max()))
 
-    tmp = np.array(data[:-1])
+    tmp = np.array(data)
 
     x = tmp[:, 0].astype(int)
     y = tmp[:, 1].astype(int)
     v = tmp[:, 2]
 
-    arr = np.zeros((y.max() + 1, x.max() + 1))
-    arr[y, x] = v
-    arr = arr[:,1:]
+    arr = np.zeros((y.max()-y.min() + 1, x.max()-x.min() + 1))
+    arr[y-y.min(), x-x.max()] = v
     arr[arr==0] = np.nan
+    arr = arr.T
 
-    fig = go.Figure(data=go.Heatmap(z=arr.T,
+    mask = np.isnan(arr)
+
+    # For each row, build indices of last non-NaN value seen
+    idx = np.where(~mask, np.arange(arr.shape[1]), 0)
+    idx = np.maximum.accumulate(idx, axis=1)
+
+    # Fill NaNs from the left
+    arr = arr[np.arange(arr.shape[0])[:, None], idx]
+
+    fig = go.Figure(data=go.Heatmap(z=arr,
                                     x=azaxis,
                                     y=elaxis))
 
@@ -86,90 +70,66 @@ app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP,
                                       "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
                                       ])
 
-files = glob('*.h5')
-options = [{"label": item, "value": item} for item in files]
+folders = [p for p in Path("data").iterdir() if p.is_dir()]
+options = [{"label": item.stem, "value": str(item)} for item in folders]
 
-app.layout = gen(plot(), options)
+app.layout = gen({}, options)
 app.title = 'spec viewer'
 
 
 @app.callback(
     Output("acufile-dropdown", "options", allow_duplicate=True),
     Output("acufile-dropdown", "value", allow_duplicate=True),
-
     Input("url", "pathname"),
     prevent_initial_call=True
 )
 def reload_sessions(_):
-    print('reload')
-
-    acufiles = glob('*.h5')
-    options = [{"label": item, "value": item } for item in acufiles]
+    folders = [p for p in Path(".").iterdir() if p.is_dir()]
+    options = [{"label": item.stem, "value": str(item)} for item in folders]
 
     return options, None
 
 @app.callback(
-    Output("info-acufile", "children"),
+    Output("info-folder", "children"),
     Output("experiment", "data"),
-    Input("acufile-dropdown", "value"),
+    Input("folder-dropdown", "value"),
     State("experiment", "data"),
 )
-def select_acufile(filename, experiment):
-    if filename is None:
+def select_folder(foldername, experiment):
+    if foldername is None:
         return no_update, no_update
 
-    with h5py.File(filename, 'r') as f:
+    files = glob(foldername+'/*.h5')
+    if len(files) != 2:
+        msg = 'there must be exactly two .h5 files in the folder'
+        return msg, experiment
+
+    first, second = [Path(f).stat().st_size for f in files]
+    acufile = files[0] if first < second else files[1]
+    specfile = files[1] if first < second else files[0]
+
+    with h5py.File(acufile, 'r') as f:
         try:
-            dfpos = pd.DataFrame({'ts': f['timestamp'][:], 'az': f['az'][:], 'el': f['el'][:]}).astype({'ts': np.int64})
+            dfpos = pd.DataFrame({'ts': f['timestamp'][:], 'az': f['az'][:], 'el': f['el'][:]}).astype(
+                {'ts': np.int64})
         except KeyError:
             msg = 'not a acu file'
         else:
-            dtstart = datetime.fromtimestamp(dfpos.iloc[0]['ts']/1000, tz=timezone.utc)
-            dtstop = datetime.fromtimestamp(dfpos.iloc[-1]['ts']/1000, tz=timezone.utc)
-            experiment.update({'acufile': {'filename': filename, 'start': dtstart, 'stop': dtstop}})
+            dtstart = datetime.fromtimestamp(dfpos.iloc[0]['ts'] / 1000, tz=timezone.utc)
+            dtstop = datetime.fromtimestamp(dfpos.iloc[-1]['ts'] / 1000, tz=timezone.utc)
+            #experiment.update({'acufile': {'filename': acufile}})
             msg = f'{fmt_dt(dtstart)} to {fmt_dt(dtstop)}'
-    return msg, experiment
 
-
-@app.callback(
-    Output("info-specfile", "children"),
-    Output("experiment", "data"),
-    Input("specfile-dropdown", "value"),
-    State("experiment", "data"),
-)
-def select_specfile(filename, experiment):
-    if filename is None:
-        return no_update, no_update
-
-    with h5py.File(filename, 'r') as f:
+    with h5py.File(specfile, 'r') as f:
         try:
             ts = f["spectra"]["timestamp"][:]
             freq = np.asarray(f.attrs['frequencies'][:])
         except KeyError:
-            msg = 'not a acu file'
+            msg = 'not a spec file'
         else:
             dfspec = pd.DataFrame({"ts": ts, "spec_idx": range(len(ts))}).astype({'ts': np.int64})
             dtstart = datetime.fromtimestamp(dfspec.iloc[0]['ts']/1000, tz=timezone.utc)
             dtstop = datetime.fromtimestamp(dfspec.iloc[-1]['ts']/1000, tz=timezone.utc)
-            experiment.update({'specfile': {'filename': filename, 'start': dtstart, 'stop': dtstop}})
-            msg = f'{fmt_dt(dtstart)} to {fmt_dt(dtstop)}'
-    return msg, experiment
-
-
-@app.callback(
-    Output("info-experiment", "children"),
-    Output('experiment', 'data'),
-    Input("experiment", "data"),
-)
-def experiment_defined(experiment):
-    if experiment['specfile'] is None or experiment['acufile'] is None:
-        return no_update, no_update
-
-    with h5py.File(experiment['acufile']['filename'], 'r') as f:
-        dfpos = pd.DataFrame({'ts': f['timestamp'][:], 'az': f['az'][:], 'el': f['el'][:]}).astype({'ts': np.int64})
-
-    with h5py.File(experiment['specfile']['filename'], 'r') as f:
-        dfspec = pd.DataFrame({"ts": f["spectra"]["timestamp"][:], "spec_idx": range(len(ts))}).astype({'ts': np.int64})
 
     merged = pd.merge_asof(
         dfspec,
@@ -179,104 +139,54 @@ def experiment_defined(experiment):
         tolerance=100  # adjust
     )
 
-    eid = uuid.uuid4().hex
-    experiment['id'] = eid
-    experiment_cache[eid] = merged
-
     merged.ts = merged.ts // 1000
     merged = merged.loc[merged.az.notna()]
-
     if len(merged) == 0:
-        msg = 'data do not overlap in time'
-    else:
-        azmin,elmin = merged[['az', 'el']].min(axis=0)
-        azmax,elmax = merged[['az', 'el']].max(axis=0)
-        #print(azmin, elmin)
-        #print(azmax, elmax)
-        #print(np.histogram(np.diff(merged.az.values), 10))
-        #print(np.histogram(np.diff(merged.el.values), 10))
+        return 'no overlap', experiment
 
-        msg = [html.P(f'overlap: {fmt_dt(merged.iloc[0]['ts'])} to {fmt_dt(merged.iloc[-1]['ts'])}'),
-               html.P(f'Number of spectra: {len(merged)}'),
-               html.P(f'az range: {int(azmin)}º - {int(azmax)}º, typical step: {merged.az.diff().max():.1f}º'),
-               html.P(f'el range: {int(elmin)}º - {int(elmax)}º, typical step: {merged.el.diff().max():.1f}º')
-               ]
+    azbin = 4
+    elbin = 1
+    binned = merged.copy()
+    binned['el'] = (binned['el'] / elbin + 0.5).astype(int)
+    binned['az'] = (binned['az'] / azbin + .5).astype(int)
 
+    elaxis = np.arange(binned.el.min(), binned.el.max() + 1) * elbin
+    azaxis = np.arange(binned.az.min(), binned.az.max() + 1) * azbin
 
+    experiment_cache[foldername] = binned
+    experiment.update({'foldername': foldername,
+                       'specfile': specfile,
+                       'elaxis': elaxis.tolist(),
+                       'azaxis': azaxis.tolist(),
+                       'elbin': elbin,
+                       'azbin': azbin})
 
-    #a = experiment['acufile']
-    #b = experiment['specfile']
-    #start1 = datetime.fromisoformat(a['start'])
-    #stop1 = datetime.fromisoformat(a['stop'])
-    #start2 = datetime.fromisoformat(b['start'])
-    #stop2 = datetime.fromisoformat(b['stop'])
-    #if start1 < stop2 and start2 < stop1:
-    #    overlap_start = max(start1, start2)
-    #    overlap_end = min(stop1, stop2)
-    #    msg = f'overlap: {fmt_dt(overlap_start)} to {fmt_dt(overlap_end)}'
-    #else:
-    #    msg = 'data do not overlap in time'
+    msg = f'{fmt_dt(dtstart)} to {fmt_dt(dtstop)}'
     return msg, experiment
-
-#@app.callback(
-#    Output("last_range", "data"),
-#    Output("map", "figure"),
-#    Input("total", "relayoutData"),
-#    State("last_range", "data"),
-#    allow_duplicate=True
-#)
-def handle_zoom_and_file(relayoutData, last_range):
-
-    ctx = callback_context
-    trigger = ctx.triggered_id
-
-    xrng = yrng = None
-
-    # ---- New file → reset everything ----
-    if trigger == "filename":
-        return dumps((None, None)), no_update
-
-    # ---- Restore previous range ----
-    if last_range:
-        xrng, yrng = loads(last_range)
-
-    # ---- Handle zoom ----
-    if relayoutData:
-        if "xaxis.autorange" in relayoutData:
-            xrng = None
-        if "yaxis.autorange" in relayoutData:
-            yrng = None
-
-        if "xaxis.range[0]" in relayoutData:
-            xrng = [
-                relayoutData["xaxis.range[0]"],
-                relayoutData["xaxis.range[1]"]
-            ]
-
-        if "yaxis.range[0]" in relayoutData:
-            yrng = [
-                relayoutData["yaxis.range[0]"].split('.')[0],
-                relayoutData["yaxis.range[1]"].split('.')[0],
-            ]
-
-    return dumps([xrng, yrng]), no_update
-
 
 @app.callback(
     Output("crop", "figure"),
     Input('azel-selection', 'data'),
+    Input('experiment', 'data'),
     prevent_initial_call=True
 )
-def update_crop(azel_selection):
-    xr, yr = azel_selection
+def update_crop(azel_selection, experiment):
+    try:
+        xr, yr = azel_selection
+    except TypeError:
+        return no_update
     xr = np.asarray(xr).astype(int)
     yr = np.asarray(yr).astype(int)
 
+    binned = experiment_cache[experiment['foldername']]
+
     data = []
     nspec = 0
-    with h5py.File('20260603-180131_sband.h5', 'r') as f:
+    with h5py.File(experiment['specfile'], 'r') as f:
+        #freq = np.asarray(f.attrs['frequencies'][:])
+        freq = f.attrs['frequencies']
         spectra = f['spectra']['spectrum']
-        crop = binned.loc[binned.az.between(*xr/azbin) & binned.el.between(*yr/elbin)]
+        crop = binned.loc[binned.az.between(*xr/experiment['azbin']) & binned.el.between(*yr/experiment['elbin'])]
         for (az, el), df in crop.groupby(['el', 'az']):
             val = np.asarray(spectra[df['spec_idx'].values])
             nspec += val.shape[0]
@@ -303,9 +213,11 @@ def update_crop(azel_selection):
     Output("total", "figure", allow_duplicate=True),
     Output("freq-selection", "data"),
     Input('total', 'selectedData'),
+    Input('experiment', 'data'),
+
     prevent_initial_call=True
 )
-def update_total_selection(selected):
+def update_total_selection(selected, experiment):
     if not selected or "range" not in selected:
         return no_update, no_update
     patch = Patch()
@@ -329,12 +241,16 @@ def update_total_selection(selected):
 @app.callback(
     Output("total", "figure"),
     #Output("last_range", "data"),
+    Input("experiment", "data"),
     State("last_range", "data"),
 )
-def update_total(last_range):
+def update_total(experiment, last_range):
     #xrng, yrng = loads(last_range) if last_range else (None, None)
+    if experiment['specfile'] is None:
+        return no_update
 
-    with h5py.File('20260603-180131_sband.h5', 'r') as f:
+    with h5py.File(experiment['specfile'], 'r') as f:
+        freq = f.attrs['frequencies']
         spec = np.asarray(f['spectra']['spectrum'][:]).max(axis=0)
         p90 = np.percentile(f['spectra']['spectrum'][:], 99.9, axis=0)
 
@@ -390,12 +306,13 @@ def update_map_selection(selected, freq):
 # ---- Main figure update ----
 @app.callback(
     Output("map", "figure"),
+    Input("experiment", "data"),
     Input("freq-selection", "data"),
     State("azel-selection", "data"),
 )
-def update_map(xrng, azel_selection):
+def update_map(experiment, xrng, azel_selection):
 
-    fig = plot(xrng)
+    fig = plot(experiment, xrng)
 
     if azel_selection:
         xr, yr = azel_selection
