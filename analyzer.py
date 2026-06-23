@@ -170,17 +170,17 @@ class Measurement:
 
 if __name__ == "__main__":
     import argparse
+    from pathlib import Path
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument("config_file", type=str)
-    parser.add_argument("output_file", type=str)
 
     args = parser.parse_args()
 
     config = Config(args.config_file)
 
     tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
-    outfile = f'{tstr}_{args.output_file}'
+    outfile = f'{tstr}_{Path(args.config_file).stem}'
     m = Measurement(outfile, **config)
     m.run("TCPIP0::10.10.10.152::INSTR")

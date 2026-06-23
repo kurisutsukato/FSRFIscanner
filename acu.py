@@ -117,7 +117,7 @@ class Antenna:
             args=(self.get_azel, self.h5, ts_dset, az_dset, el_dset),
             daemon=True,
         )
-
+        log.info('starting aquisition loop')
         self.thread.start()
 
     def stop(self):

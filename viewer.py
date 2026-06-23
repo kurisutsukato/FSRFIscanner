@@ -22,24 +22,35 @@ def plot(exp, xrng=None):
     data = []
     with h5py.File(exp['specfile'], 'r') as f:
         spectra = f['spectra']['spectrum']
+        timestamp = f['spectra']['timestamp']
         freq = f.attrs['frequencies']
         for (az, el), df in binned.groupby(['el', 'az']):
             val = np.asarray(spectra[df['spec_idx'].values])
+            tsval = np.asarray(timestamp[df['spec_idx'].values]).min()
             if xrng is not None:
                 a,b = np.searchsorted(freq, xrng)
                 val = val[:,a:b]
-            data.append((az, el, val.max()))
+            data.append((tsval, az, el, val.max()))
 
     tmp = np.array(data)
 
-    x = tmp[:, 0].astype(int)
-    y = tmp[:, 1].astype(int)
-    v = tmp[:, 2]
+    dtstr = np.array([
+        datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+        for ts in tmp[:, 0]/1000
+    ])
+
+    x = tmp[:, 1].astype(int)
+    y = tmp[:, 2].astype(int)
+    v = tmp[:, 3]
 
     arr = np.zeros((y.max()-y.min() + 1, x.max()-x.min() + 1))
+    tarr = np.empty(arr.shape, dtype='<U16')
     arr[y-y.min(), x-x.max()] = v
     arr[arr==0] = np.nan
     arr = arr.T
+
+    tarr[y-y.min(), x-x.max()] = dtstr
+    tarr = tarr.T
 
     mask = np.isnan(arr)
 
@@ -49,10 +60,18 @@ def plot(exp, xrng=None):
 
     # Fill NaNs from the left
     arr = arr[np.arange(arr.shape[0])[:, None], idx]
+    tarr = tarr[np.arange(tarr.shape[0])[:, None], idx]
 
     fig = go.Figure(data=go.Heatmap(z=arr,
                                     x=azaxis,
-                                    y=elaxis))
+                                    y=elaxis,
+                                    customdata=tarr,
+                                    hovertemplate=
+                                    "azimuth: %{x}º<br>" +
+                                    "elevation: %{y}º<br>" +
+                                    "max. power: %{z}<br>" +
+                                    "time: %{customdata}<extra></extra>"
+                                    ))
 
     fig.update_layout(dragmode="select",
                       clickmode='event+select',
@@ -128,8 +147,6 @@ def select_folder(foldername, experiment):
             msg = 'not a spec file'
         else:
             dfspec = pd.DataFrame({"ts": ts, "spec_idx": range(len(ts))}).astype({'ts': np.int64})
-            dtstart = datetime.fromtimestamp(dfspec.iloc[0]['ts']/1000, tz=timezone.utc)
-            dtstop = datetime.fromtimestamp(dfspec.iloc[-1]['ts']/1000, tz=timezone.utc)
 
     merged = pd.merge_asof(
         dfspec,
@@ -143,6 +160,9 @@ def select_folder(foldername, experiment):
     merged = merged.loc[merged.az.notna()]
     if len(merged) == 0:
         return 'no overlap', experiment
+
+    dtstart = datetime.fromtimestamp(merged.iloc[0]['ts'], tz=timezone.utc)
+    dtstop = datetime.fromtimestamp(merged.iloc[-1]['ts'], tz=timezone.utc)
 
     azbin = 4
     elbin = 1
