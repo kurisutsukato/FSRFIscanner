@@ -125,6 +125,9 @@ class Antenna:
         self.deactivate()
         self.thread.join()
 
+    def stan(self):
+        self.execute('antenna=STAN')
+
     def move_to(self, azcmd, elcmd):
         log.info(f'moving to {azcmd}/{elcmd}')
         self.execute(f'antenna=PRES,{azcmd},{elcmd}')

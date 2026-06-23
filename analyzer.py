@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 import warnings
 import re
+import os
 
 warnings.filterwarnings("ignore")
 
@@ -20,60 +21,60 @@ class Config(dict):
             mat = re.match(r'(\S+)\s*=\s*(\S+)', row.strip())
             if mat:
                 k,v = mat.groups()
-                self[k.lower()] = int(v)
+                self[k.lower()] = float(v)
 
+class Analyzer:
+    def __init__(self, device="TCPIP0::10.10.10.152::INSTR"):
+        self.sa = None
+        self.device = device
+        self.maxhold = 2.0
 
-class VISADummy(object):
-    def __init__(self, pts):
-        self.pts = pts
+        self.connect()
 
-    def query(self, query):
-        if query == '*IDN?':
-            return 'visadummy device'
+    def __del__(self):
+        if self.sa is not None:
+            self.sa.close()
+            log.info('disconnected')
 
-    def write(self, data):
-        log.debug(f'visadummy write {data}')
+    def connect(self):
+        if self.sa is None:
+            rm = pyvisa.ResourceManager()
+            self.sa = rm.open_resource(self.device)
+            log.info('connected')
 
-    def close(self):
-        log.debug(f'visadummy close')
+    def maxval(self, wait=0.1):
+        self.sa.write("INIT:CONT ON")
+        self.sa.write("FORM REAL,32")
+        self.hold()
+        time.sleep(wait)
 
-    def query_binary_values(self, cmd, datatype='f', container=np.array):
-        log.debug(f'visadummy query binary')
-        return np.sin(np.linspace(0,100,self.pts)+time.time())
+        #self.sa.write("INIT:CONT OFF")
+        #self.sa.write("TRAC:CLE")
+        self.clearwrite()
 
-class Measurement:
-    def __init__(self, filename, start_freq=70, stop_freq=670, points=101, rbw=10, maxhold=10):
-        '''
-        :param filename: filename
-        :param start_freq: start frequency (MHz)
-        :param stop_freq: stop frequency (MHz)
-        :param pts: number of points
-        :param rbw: resolution  bandwidth (Mhz), default is 10
-        :param maxhold: maxhold time (s), default is 10s
-        '''
-        if filename.split('.')[-1] != 'h5':
-            filename = filename + '.h5'
+        trace = self.sa.query_binary_values(
+            "TRAC:DATA? TRACE1",
+            datatype='f',
+            container=np.array
+        )
+        return trace.max()
+
+    def init_hdf5(self, filename, start_freq, stop_freq, num_points, rbw):
+        if os.path.exists(filename):
+            print(f'file {filename} exists')
+            return
 
         self.filename = filename
-        self.start_freq = start_freq*1e6
-        self.stop_freq = stop_freq*1e6
-        self.pts = points
-        self.rbw = rbw*1e6
-        self.maxhold = maxhold
+        h5 = h5py.File(filename, "a")
 
-        log.debug(f'created file: {filename}')
-
-    def open_hdf5(self):
-        self.h5 = h5py.File(self.filename, "a")
-
-        grp_spec = self.h5.require_group("spectra")
+        grp_spec = h5.require_group("spectra")
 
         h5_spec = grp_spec.require_dataset(
             "spectrum",
-            shape=(0,self.pts),
-            maxshape=(None,self.pts),
+            shape=(0,num_points),
+            maxshape=(None,num_points),
             dtype="float32",
-            chunks=(1024,self.pts)
+            chunks=(1024,num_points)
         )
 
         h5_ts = grp_spec.require_dataset(
@@ -86,61 +87,83 @@ class Measurement:
         h5_ts.attrs["unit"] = "miliseconds since Unix epoch"
         h5_ts.attrs["timezone"] = "UTC"
 
-        frequencies = np.linspace(self.start_freq, self.stop_freq, self.pts)
-        if not 'frequencies' in self.h5.attrs:
-            self.h5.attrs['frequencies'] = frequencies
-            self.h5.attrs['rbw'] = self.rbw
-            self.h5.attrs['maxhold'] = self.maxhold
-            self.h5.attrs['pts'] = self.pts
+        frequencies = np.linspace(start_freq, stop_freq, num_points)
+        if not 'frequencies' in h5.attrs:
+            h5.attrs['frequencies'] = frequencies
+            h5.attrs['rbw'] = rbw
+            h5.attrs['maxhold'] = self.maxhold
+            h5.attrs['pts'] = num_points
 
-        return h5_spec, h5_ts
+        h5.close()
+
+    def open_hdf5(self):
+        self.h5 = h5py.File(self.filename, "a")
+
+        grp_spec = self.h5.require_group("spectra")
+        return grp_spec['spectrum'], grp_spec['timestamp']
 
     def close_hdf5(self):
         self.h5.close()
 
-    def run(self, device="TCPIP0::10.10.10.152::INSTR"):
-        '''
-        :param device: VISA address string
-        :return:
-        '''
+    def hold(self):
+        self.sa.write("DISP:TRAC1:MODE MAXH")
 
-        try:
-            rm = pyvisa.ResourceManager()
-            sa = rm.open_resource(device)
-        except Exception as e:
-            print(e)
-            sa = VISADummy(self.pts)
+    def clearwrite(self):
+        self.sa.write("DISP:TRAC1:MODE WRIT")
 
-        sa.timeout = 20000
+    def reset(self):
+        self.sa.write('*RST')
 
-        log.info(f'connected to {sa.query("*IDN?")}')
+    def config(self, kw):
+        if 'pts' in kw:
+            self.sa.write(f"SWE:POIN {kw['pts']}")
+        if 'rbw' in kw:
+            self.sa.write(f"BAND {kw['rbw']}")
 
-        sa.write("*RST")
+        if 'start_freq' in kw:
+            print(kw['start_freq'])
+            self.sa.write(f"FREQ:STAR {kw['start_freq']}")
+        if 'stop_freq' in kw:
+            self.sa.write(f"FREQ:STOP {kw['stop_freq']}")
+        if 'center' in kw:
+            self.sa.write(f"FREQ:CENT {kw['center']}")
+        if 'span' in kw:
+            self.sa.write(f"FREQ:SPAN {kw['span']}")
 
-        sa.write(f"SWE:POIN {self.pts}")
-        sa.write(f"BAND {self.rbw}")
-        sa.write("INIT:CONT ON")
+        if 'maxhold' in kw:
+            self.maxhold = kw['maxhold']
 
-        sa.write("DET SAMPLE")
-        #sa.write("DET POS")
-        sa.write("DISP:TRAC1:MODE MAXH")
-        sa.write("DISP:TRAC:Y:RLEV -10")
-        sa.write("DISP:TRAC:Y:SCAL 100")
 
-        sa.write("FORM REAL,32")
+    def run(self, filename, device="TCPIP0::10.10.10.152::INSTR"):
+        if filename.split('.')[-1] != 'h5':
+            filename = filename + '.h5'
 
-        sa.write(f"FREQ:STAR {self.start_freq}")
-        sa.write(f"FREQ:STOP {self.stop_freq}")
+        start_freq = float(self.sa.query("FREQ:STAR?"))
+        stop_freq = float(self.sa.query("FREQ:STOP?"))
+        num_points = int(self.sa.query("SWE:POIN?"))
+        rbw = float(self.sa.query("BAND?"))
+
+        self.init_hdf5(filename, start_freq, stop_freq, num_points, rbw)
+
+        self.sa.write("INIT:CONT ON")
+
+        self.sa.write("DET SAMPLE")
+        #self.sa.write("DET POS")
+        self.sa.write("DISP:TRAC1:MODE MAXH")
+        self.sa.write("DISP:TRAC:Y:RLEV -10")
+        self.sa.write("DISP:TRAC:Y:SCAL 100")
+
+        self.sa.write("FORM REAL,32")
 
         try:
             while True:
-                sa.write("INIT:CONT ON")
+                self.sa.write("INIT:CONT ON")
 
                 time.sleep(self.maxhold)
-                sa.write("INIT:CONT OFF")
-                sa.write("TRAC:CLE")
+                self.sa.write("INIT:CONT OFF")
+                self.sa.write("TRAC:CLE")
 
-                trace = sa.query_binary_values(
+                trace = self.sa.query_binary_values(
                     "TRAC:DATA? TRACE1",
                     datatype='f',
                     container=np.array
@@ -163,10 +186,8 @@ class Measurement:
 
         except KeyboardInterrupt:
             log.info("Stopping")
-
-        finally:
-            sa.close()
             self.close_hdf5()
+
 
 if __name__ == "__main__":
     import argparse
@@ -182,5 +203,6 @@ if __name__ == "__main__":
 
     tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
     outfile = f'{tstr}_{Path(args.config_file).stem}'
-    m = Measurement(outfile, **config)
-    m.run("TCPIP0::10.10.10.152::INSTR")
+    m = Analyzer()
+    m.config(config)
+    m.run(outfile)
