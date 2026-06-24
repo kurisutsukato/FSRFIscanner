@@ -62,9 +62,9 @@ To read the antenna position from the Field System shared memory, the software m
 know which station-code variables contain the azimuth and elevation values and where
 these variables are located within the shared memory structure.
 
-The script stcom.py assists with this task. It looks for stcom.h either in its
-standard location (/usr2/st/include) or in the current working directory. When
-executed successfully, it generates a .env file containing the shared-memory
+The script `stcom.py` assists with this task. It looks for `stcom.h` either in its
+standard location (`/usr2/st/include`) or in the current working directory. When
+executed successfully, it generates a `.env` file containing the shared-memory
 offsets of the relevant azimuth and elevation variables.
 
 These offsets are subsequently used by antenna_control.py to access the antenna

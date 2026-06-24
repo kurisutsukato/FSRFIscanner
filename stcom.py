@@ -14,7 +14,7 @@ def cleanup():
 def offset(symbol):
     ffi = FFI()
     try:
-        header = open('/usr/st/include/stcom.h', 'r').read()
+        header = open('/usr2/st/include/stcom.h', 'r').read()
     except IOError:
         try:
             header = open('stcom.h', 'r').read()
