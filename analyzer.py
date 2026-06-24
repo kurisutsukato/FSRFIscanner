@@ -122,6 +122,8 @@ class Analyzer:
 
 
     def config(self, kw):
+        print(kw)
+
         if 'pts' in kw:
             self.sa.write(f"SWE:POIN {kw['pts']}")
         if 'rbw' in kw:
