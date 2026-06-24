@@ -1,7 +1,7 @@
 from cffi import FFI
 import importlib
+import sys
 
-import os
 from glob import glob
 
 def cleanup():
@@ -13,7 +13,15 @@ def cleanup():
 
 def offset(symbol):
     ffi = FFI()
-    header = open('stcom.h', 'r').read()
+    try:
+        header = open('/usr/st/include/stcom.h', 'r').read()
+    except IOError:
+        try:
+            header = open('stcom.h', 'r').read()
+        except IOError:
+            print('unable to find stcom.h')
+            sys.exit()
+
     source = """
 long offset() {{
 	return (long)(&((struct stcom *)NULL)->{});
@@ -27,11 +35,22 @@ long offset() {{
     return _stcom.lib.offset()
 
 if __name__ == '__main__':
-    import sys
-    name = sys.argv[1]
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('azvar', help='name of the station SHM variable for the actual azimuth position, e.g. Azactpos')
+    parser.add_argument('elvar', help='name of the station SHM variable for the actual elevation position, e.g. Elactpos')
+
     cleanup()
-    print('{}: offset {}'.format(name, offset(name)))  
+    args = parser.parse_args()
+    azoff = offset(args.azvar)
     cleanup()
-    
+    eloff = offset(args.elvar)
+    cleanup()
+
+    print(f'AZOFFSET={azoff}\nELOFFSET={eloff}', file=open('.env', 'w'))
+    print('done')
+
     
     

@@ -1,6 +1,6 @@
 
 import subprocess
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import re
 import numpy as np
 
@@ -11,12 +11,13 @@ import os
 
 import h5py
 
-import logging
 import sys
+from pathlib import Path
 
 import dotenv
 dotenv.load_dotenv()
 
+import logging
 log = logging.getLogger('track')
 fmt = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=fmt)
@@ -26,12 +27,20 @@ try:
 except ImportError:
     pass
 else:
-    AZOFFSET = int(os.environ['AZOFFSET'])
-    ELOFFSET = int(os.environ['ELOFFSET'])
-
+    try:
+        AZOFFSET = int(os.environ['AZOFFSET'])
+        ELOFFSET = int(os.environ['ELOFFSET'])
+    except KeyError:
+        print('run stcom.py first')
+        sys.exit()
 
 stop_event = threading.Event()
 write_lock = threading.Lock()
+
+def load_cnf(filename):
+    with open(filename) as f:
+        a,b = f.readline().strip().split(',')
+        return (int(a),int(b)),[(k, float(l), float(m)) for row in f for k, l, m in [row.strip().split(',')]]
 
 def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
     period = 0.1  # seconds
@@ -125,23 +134,6 @@ class Antenna:
         self.deactivate()
         self.thread.join()
 
-    def stan(self):
-        self.execute('antenna=STAN')
-
-    def move_to(self, azcmd, elcmd):
-        log.info(f'moving to {azcmd}/{elcmd}')
-        self.execute(f'antenna=PRES,{azcmd},{elcmd}')
-
-        while True:
-            az, el = self.get_azel()
-            if abs(az - azcmd) < 0.1 and abs(el - elcmd) < 0.1:
-                break
-            time.sleep(0.2)
-        az, el = self.get_azel()
-        log.info(f'reached {az}/{el}')
-
-        self.az_target, self.el_target = azcmd, elcmd
-
     def move_rel(self, axis, delta, speed):
         speed = speed if delta > 0 else -speed
 
@@ -168,6 +160,23 @@ class Antenna:
         else:
             self.move_to(self.az_target, self.el_target + delta)
 
+    def move_to(self, azcmd, elcmd):
+        log.info(f'moving to {azcmd}/{elcmd}')
+        self.pres(azcmd, elcmd)
+
+        while True:
+            az, el = self.get_azel()
+            if abs(az - azcmd) < 0.1 and abs(el - elcmd) < 0.1:
+                break
+            time.sleep(0.2)
+        az, el = self.get_azel()
+        log.info(f'reached {az}/{el}')
+
+        self.az_target, self.el_target = azcmd, elcmd
+
+    def pres(self, az, el):
+        log.info(f'positioning {az}/{el}')
+        self.execute(f'antenna=PRES,{az},{el}')
 
     def slew(self, az=0, el=0):
         log.info(f'slewing {az}/{el}')
@@ -213,38 +222,34 @@ class Antenna:
         else:
             return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
 
-def scan(start, coords, filename, simulation=True):
-    ant = Antenna(simulation=simulation)
-    ant.activate()
-    ant.move_to(*start)
-    time.sleep(2)
-    ant.aquire(filename)
-    for pos in coords:
-        ant.move_rel(*pos)
-        log.info(f'{ant.get_azel()}')
-    ant.stop()
+    def scan(self, conf_file):
+        start, coords = load_cnf(conf_file)
 
+        tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+        output = f'{tstr}_{Path(conf_file).stem}.h5'
 
-def load_cnf(filename):
-    with open(filename) as f:
-        a,b = f.readline().strip().split(',')
-        return (int(a),int(b)),[(k, float(l), float(m)) for row in f for k, l, m in [row.strip().split(',')]
-]
+        self.activate()
+        self.move_to(*start)
+        time.sleep(2)
+        self.aquire(output)
+        for pos in coords:
+            self.move_rel(*pos)
+            log.info(f'{self.get_azel()}')
+        self.stop()
 
 if __name__ == '__main__':
     import argparse
     import os
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('filename', help='config file')
+    parser.add_argument('configfile', help='antenna control config file')
     parser.add_argument('--nosim', action='store_true', default=False, help='disable simulation mode')
     args = parser.parse_args()
 
-    tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
-    start, coords = load_cnf(args.filename)
-    name = os.path.basename(args.filename).split('.')[0]
+    a = Antenna(simulation=not args.nosim)
+    a.scan(args.configfile)
 
-    scan(start, coords, f'{tstr}_{name}.h5', simulation=not args.nosim)
+
 
 
 

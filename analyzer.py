@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import warnings
 import re
 import os
+import sys
 
 warnings.filterwarnings("ignore")
 
@@ -17,6 +18,7 @@ logging.getLogger("pyvisa").disabled = True
 
 class Config(dict):
     def __init__(self, filename):
+        super().__init__()
         for row in open(filename):
             mat = re.match(r'(\S+)\s*=\s*(\S+)', row.strip())
             if mat:
@@ -24,7 +26,11 @@ class Config(dict):
                 self[k.lower()] = float(v)
 
 class Analyzer:
-    def __init__(self, device="TCPIP0::10.10.10.152::INSTR"):
+    def __init__(self, device):
+        '''
+
+        :param device: VISA address string, e.g. TCPIP0::10.10.10.152::INSTR
+        '''
         self.sa = None
         self.device = device
         self.maxhold = 2.0
@@ -61,8 +67,8 @@ class Analyzer:
 
     def init_hdf5(self, filename, start_freq, stop_freq, num_points, rbw):
         if os.path.exists(filename):
-            print(f'file {filename} exists')
-            return
+            print(f'file {filename} exists, aborting')
+            sys.exit()
 
         self.filename = filename
         h5 = h5py.File(filename, "a")
@@ -122,7 +128,6 @@ class Analyzer:
             self.sa.write(f"BAND {kw['rbw']}")
 
         if 'start_freq' in kw:
-            print(kw['start_freq'])
             self.sa.write(f"FREQ:STAR {kw['start_freq']}")
         if 'stop_freq' in kw:
             self.sa.write(f"FREQ:STOP {kw['stop_freq']}")
@@ -135,7 +140,7 @@ class Analyzer:
             self.maxhold = kw['maxhold']
 
 
-    def run(self, filename, device="TCPIP0::10.10.10.152::INSTR"):
+    def run(self, filename):
         if filename.split('.')[-1] != 'h5':
             filename = filename + '.h5'
 
@@ -149,7 +154,6 @@ class Analyzer:
         self.sa.write("INIT:CONT ON")
 
         self.sa.write("DET SAMPLE")
-        #self.sa.write("DET POS")
         self.sa.write("DISP:TRAC1:MODE MAXH")
         self.sa.write("DISP:TRAC:Y:RLEV -10")
         self.sa.write("DISP:TRAC:Y:SCAL 100")
@@ -196,8 +200,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("config_file", type=str)
-    parser.add_argument("output_file", nargs="?")
+    parser.add_argument("config_file", type=str, help="defines the scanning pattern")
+    parser.add_argument("visa_address", type=str, help="VISA address, e.g. TCPIP0::10.10.10.152::INSTR")
+    parser.add_argument("output_file", nargs="?", help="hdf5 output file")
     args = parser.parse_args()
 
     config = Config(args.config_file)
@@ -207,6 +212,7 @@ if __name__ == "__main__":
         outfile = args.output_file
     else:
         outfile = f'{tstr}_{Path(args.config_file).stem}'
-    m = Analyzer()
+
+    m = Analyzer(args.visa_address)
     m.config(config)
     m.run(outfile)
