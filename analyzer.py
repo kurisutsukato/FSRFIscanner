@@ -135,7 +135,8 @@ class Analyzer:
             self.sa.write(f"FREQ:CENT {kw['center']}")
         if 'span' in kw:
             self.sa.write(f"FREQ:SPAN {kw['span']}")
-
+        if 'level' in kw:
+            self.sa.write(f"DISP:TRAC:Y:RLEV {kw['level']}")
         if 'maxhold' in kw:
             self.maxhold = kw['maxhold']
 
@@ -155,7 +156,6 @@ class Analyzer:
 
         self.sa.write("DET SAMPLE")
         self.sa.write("DISP:TRAC1:MODE MAXH")
-        self.sa.write("DISP:TRAC:Y:RLEV -10")
         self.sa.write("DISP:TRAC:Y:SCAL 100")
 
         self.sa.write("FORM REAL,32")

@@ -65,8 +65,13 @@ these variables are located within the shared memory structure.
 The script `stcom.py` assists with this task. It looks for `stcom.h` either in its
 standard location (`/usr2/st/include`) or in the current working directory. When
 executed successfully, it generates a `.env` file containing the shared-memory
-offsets of the relevant azimuth and elevation variables.
+offsets of the relevant azimuth and elevation variables. You need to provide the variable
+names as command line argument, e.g.
 
+    python stcom.py Azactpos Elactpos
+
+Adapt the variables according to your `stcom.h`.
+ 
 These offsets are subsequently used by antenna_control.py to access the antenna
 position data directly from shared memory.
 
@@ -109,5 +114,19 @@ moves the antenna by +1° in elevation at a slew rate of 0.1°/s.
 
 The commands are executed sequentially in the order in which they appear
 in the configuration file, thereby defining the complete scanning
-pattern. The `gensky.py` script generates a full sky scan starting at 0,2 az/el
-position.
+pattern. The `gensky.py` script generates a full sky scan (saved as `fullsky.cnf`)
+starting at 0,2 az/el position.
+
+Start the scan in simulation mode (no commands are sent to the anntena) by executing
+
+    python antenna_control.py fullsky.cnf
+
+Once you are sure everything is alright, start the real scan with
+
+    python antenna_control.py fullsky.cnf --nosim
+
+Using the analyzer interface
+----------------------------
+
+
+
