@@ -114,6 +114,7 @@ class Analyzer:
     def reset(self):
         self.sa.write('*RST')
 
+
     def config(self, kw):
         if 'pts' in kw:
             self.sa.write(f"SWE:POIN {kw['pts']}")
@@ -196,13 +197,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("config_file", type=str)
-
+    parser.add_argument("output_file", nargs="?")
     args = parser.parse_args()
 
     config = Config(args.config_file)
 
     tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
-    outfile = f'{tstr}_{Path(args.config_file).stem}'
+    if args.output_file:
+        outfile = args.output_file
+    else:
+        outfile = f'{tstr}_{Path(args.config_file).stem}'
     m = Analyzer()
     m.config(config)
     m.run(outfile)

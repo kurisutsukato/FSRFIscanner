@@ -1,6 +1,6 @@
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import re
 import numpy as np
 
@@ -144,17 +144,6 @@ class Antenna:
 
     def move_rel(self, axis, delta, speed):
         speed = speed if delta > 0 else -speed
-        #apos = np.asarray(self.ant.get_azel())
-        #log.info(f'actual position: {apos}')
-
-        #tmp = apos - np.array([self.az_target, self.el_target])
-        #log.info(f'diff with theoretical position {tmp}')
-        #corr = tmp[0] if dir == 'az' else tmp[1]
-        #if abs(corr) > 10:
-        #    log.info('azimuth overrun detected')
-        #    corr = corr%360
-        #delta_corr = delta-corr
-        #log.info(f'moving by {delta_corr}')
 
         t0 = time.monotonic()
         delta_t = delta / speed
@@ -178,6 +167,7 @@ class Antenna:
             self.move_to(self.az_target + delta, self.el_target)
         else:
             self.move_to(self.az_target, self.el_target + delta)
+
 
     def slew(self, az=0, el=0):
         log.info(f'slewing {az}/{el}')
