@@ -182,6 +182,16 @@ experiment into the corresponding directory.
 The visualization software automatically identifies the position file and the spectra file based on
 their file sizes. In most cases, the spectra file is significantly larger than the position file.
 
+Run the `vis.py` script. The user interface is served through a web browser. After the script starts,
+it prints the URL of the web application to the terminal. Open this URL in your browser to access the interface.
+
+     * Serving Flask app 'vis'
+     * Debug mode: off
+    WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+     * Running on http://127.0.0.1:8050
+    Press CTRL+C to quit
+
+
 The user interface consists of three linked plots:
 
 - Top left: Displays the maximum spectrum over the entire dataset together with its 99th percentile.
@@ -198,3 +208,5 @@ The plots are interactive:
 
 This allows you to quickly identify interference sources in both frequency and sky position and to
 examine their spectral characteristics in detail.
+
+![Screenshot](vis_screenshot.png)
