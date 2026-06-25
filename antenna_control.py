@@ -82,6 +82,7 @@ class Antenna:
         self.az_target = 0
         self.el_target = 0
 
+        # those are only used for simulation mode
         self.az = 0
         self.el = 0
         self.az_speed = 0
@@ -131,7 +132,10 @@ class Antenna:
     def stop(self):
         stop_event.set()
         self.deactivate()
-        self.thread.join()
+        try:
+            self.thread.join()
+        except AttributeError:
+            pass
 
     def move_rel(self, axis, delta, speed):
         speed = speed if delta > 0 else -speed
@@ -184,7 +188,7 @@ class Antenna:
     def activate(self):
         log.info('activating')
         self.execute('antenna=ACTI')
-        self.az, self.el = self.get_azel()
+        self.az_target, self.el_target = self.get_azel()
         time.sleep(0.5)
 
     def deactivate(self):
