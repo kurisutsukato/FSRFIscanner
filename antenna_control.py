@@ -26,13 +26,12 @@ try:
     from st_shm import read_shm
 except ImportError:
     pass
-else:
+finally:
     try:
         AZOFFSET = int(os.environ['AZOFFSET'])
         ELOFFSET = int(os.environ['ELOFFSET'])
     except KeyError:
-        print('run stcom.py first')
-        sys.exit()
+        raise Exception('run stcom.py first')
 
 stop_event = threading.Event()
 write_lock = threading.Lock()
