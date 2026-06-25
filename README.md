@@ -57,9 +57,11 @@ Create a virtual python environment
 
 then install the dependencies with:
 
-    python -m pip install -r requirements.txt
+    python -m pip install -r requirements_xxxx.txt
 
-
+Since the three scripts are typically executed on different computers and have different
+dependencies, a separate `requirements_xxx.txt` file is provided for each script. Install the
+dependencies using the requirements file corresponding to the script you intend to run.
 
 To read the antenna position from the Field System shared memory, the software must
 know which station-code variables contain the azimuth and elevation values and where

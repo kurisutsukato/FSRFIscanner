@@ -1,10 +1,6 @@
 pandas
+plotly
 dash
 dash-bootstrap-components
 numpy
-scipy
 h5py
-cffi
-dotenv
-pyvisa-py
-jupyterlab
