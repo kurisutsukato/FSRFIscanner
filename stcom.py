@@ -8,6 +8,8 @@ def cleanup():
     try:
         for f in glob('_stcom.*'):
             os.unlink(f)
+        for f in glob('__pycache__/st_shm*'):
+            os.unlink(f)
     except IOError:
         pass
 
@@ -27,7 +29,7 @@ long offset() {{
 	return (long)(&((struct stcom *)NULL)->{});
 }}
     """.format(symbol)
-    print(source)
+
     ffi.set_source("_stcom", header+source)
     ffi.cdef("""long offset();""")
     ffi.compile()
