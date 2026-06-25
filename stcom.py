@@ -28,11 +28,11 @@ long offset() {{
 }}
     """.format(symbol)
 
-    ffi.set_source("_stcom", header+source)
+    ffi.set_source(f"_{symbol}", header+source)
     ffi.cdef("""long offset();""")
     ffi.compile()
-    sys.modules.pop("_stcom", None)
-    _stcom = importlib.import_module('_stcom')
+
+    _stcom = importlib.import_module(f"_{symbol}")
     return _stcom.lib.offset()
 
 if __name__ == '__main__':
