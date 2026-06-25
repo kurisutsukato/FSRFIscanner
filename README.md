@@ -2,7 +2,7 @@ FSRFIscanner
 ------------
 
 FSRFIscanner is a collection of Python scripts that enables a Field
-System–controlled radio telescope to be used as an RFI (Radio Frequency Interference)
+System–controlled radio telescope to be used as a RFI (Radio Frequency Interference)
 scanner.
 
 `antenna_control.py`, running on the Field System computer, continuously
@@ -20,8 +20,8 @@ generates spectral intensity maps. It provides interactive tools for
 exploring the data, allowing the user to filter by frequency range,
 azimuth/elevation coordinates, or both.
 
-The latter two scripts run on linux and windows, the former naturally on the
-Field System linux computer.
+The latter two scripts run on both linux and windows, while the first script
+has to run on the Field System linux computer.
 
 Technical prerequisites
 -----------------------
