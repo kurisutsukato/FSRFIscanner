@@ -1,3 +1,5 @@
+from abc import abstractmethod, ABC
+
 import pyvisa
 import numpy as np
 import h5py
@@ -25,49 +27,42 @@ class Config(dict):
                 k,v = mat.groups()
                 self[k.lower()] = float(v)
 
-class Analyzer:
+class Analyzer(ABC):
     def __init__(self, device):
         '''
 
         :param device: VISA address string, e.g. TCPIP0::10.10.10.152::INSTR
         '''
-        self.sa = None
+        self.conn = None
         self.device = device
         self.maxhold = 2.0
 
         self.connect()
 
     def __del__(self):
-        if self.sa is not None:
-            self.sa.close()
-            log.info('disconnected')
+        self.disconnect()
 
+    @abstractmethod
     def connect(self):
-        if self.sa is None:
-            rm = pyvisa.ResourceManager()
-            self.sa = rm.open_resource(self.device)
-            log.info('connected')
+        pass
 
-    def maxval(self, wait=0.1):
-        self.sa.write("INIT:CONT ON")
-        self.sa.write("FORM REAL,32")
-        self.hold()
-        time.sleep(wait)
-
-        #self.sa.write("INIT:CONT OFF")
-        #self.sa.write("TRAC:CLE")
-        self.clearwrite()
-
-        trace = self.sa.query_binary_values(
-            "TRAC:DATA? TRACE1",
-            datatype='f',
-            container=np.array
-        )
-        return trace.max()
+    @abstractmethod
+    def disconnect(self):
+        pass
 
     def init_hdf5(self, filename, start_freq, stop_freq, num_points, rbw):
+        '''
+
+        :param filename: hdf5 filename
+        :param start_freq: start frequency in Hz (metadata stored in t the hdf5 file)
+        :param stop_freq: stop frequency in Hz (metadata stored in t the hdf5 file)
+        :param num_points: number of points of the traces (metadata stored in t the hdf5 file)
+        :param rbw: resolution bandwidth in Hz (metadata stored in t the hdf5 file)
+        :return:
+        '''
+
         if os.path.exists(filename):
-            print(f'file {filename} exists, aborting')
+            log.error(f'file {filename} exists, aborting')
             sys.exit()
 
         self.filename = filename
@@ -99,7 +94,6 @@ class Analyzer:
             h5.attrs['rbw'] = rbw
             h5.attrs['maxhold'] = self.maxhold
             h5.attrs['pts'] = num_points
-
         h5.close()
 
     def open_hdf5(self):
@@ -111,87 +105,120 @@ class Analyzer:
     def close_hdf5(self):
         self.h5.close()
 
+    @abstractmethod
     def hold(self):
-        self.sa.write("DISP:TRAC1:MODE MAXH")
+        pass
+
+    @abstractmethod
+    def clearwrite(self):
+        pass
+
+    @abstractmethod
+    def reset(self):
+        pass
+
+    @abstractmethod
+    def config(self, kw):
+        pass
+
+    def write_hdf5(self, trace):
+        dt = datetime.now(timezone.utc)
+        timestamp = int(dt.timestamp() * 1000)
+
+        spec, ts = self.open_hdf5()
+
+        n = spec.shape[0]
+        spec.resize(n + 1, axis=0)
+        spec[n] = trace
+        ts.resize(n + 1, axis=0)
+        ts[n] = timestamp
+
+        self.close_hdf5()
+
+        log.info(f"cycle {n} saved")
+
+    @abstractmethod
+    def run(self, filename):
+        pass
+
+
+class FSL18(Analyzer):
+    def connect(self):
+        if self.conn is None:
+            rm = pyvisa.ResourceManager()
+            self.conn = rm.open_resource(self.device)
+            log.info('connected')
+
+    def disconnect(self):
+        if self.conn is not None:
+            self.conn.close()
+            log.info('disconnected')
+
+    def hold(self):
+        self.conn.write("DISP:TRAC1:MODE MAXH")
 
     def clearwrite(self):
-        self.sa.write("DISP:TRAC1:MODE WRIT")
+        self.conn.write("DISP:TRAC1:MODE WRIT")
 
     def reset(self):
-        self.sa.write('*RST')
-
+        self.conn.write('*RST')
 
     def config(self, kw):
         if 'pts' in kw:
-            self.sa.write(f"SWE:POIN {kw['pts']}")
+            self.conn.write(f"SWE:POIN {kw['pts']}")
         if 'rbw' in kw:
-            self.sa.write(f"BAND {kw['rbw']}")
+            self.conn.write(f"BAND {kw['rbw']}")
         if 'start_freq' in kw:
-            self.sa.write(f"FREQ:STAR {kw['start_freq']}")
+            self.conn.write(f"FREQ:STAR {kw['start_freq']}")
         if 'stop_freq' in kw:
-            self.sa.write(f"FREQ:STOP {kw['stop_freq']}")
+            self.conn.write(f"FREQ:STOP {kw['stop_freq']}")
         if 'center' in kw:
-            self.sa.write(f"FREQ:CENT {kw['center']}")
+            self.conn.write(f"FREQ:CENT {kw['center']}")
         if 'span' in kw:
-            self.sa.write(f"FREQ:SPAN {kw['span']}")
+            self.conn.write(f"FREQ:SPAN {kw['span']}")
         if 'level' in kw:
-            self.sa.write(f"DISP:TRAC:Y:RLEV {kw['level']}")
+            self.conn.write(f"DISP:TRAC:Y:RLEV {kw['level']}")
         if 'maxhold' in kw:
             self.maxhold = kw['maxhold']
-
 
     def run(self, filename):
         if filename.split('.')[-1] != 'h5':
             filename = filename + '.h5'
 
-        start_freq = float(self.sa.query("FREQ:STAR?"))
-        stop_freq = float(self.sa.query("FREQ:STOP?"))
-        num_points = int(self.sa.query("SWE:POIN?"))
-        rbw = float(self.sa.query("BAND?"))
+        start_freq = float(self.conn.query("FREQ:STAR?"))
+        stop_freq = float(self.conn.query("FREQ:STOP?"))
+        num_points = int(self.conn.query("SWE:POIN?"))
+        rbw = float(self.conn.query("BAND?"))
 
         self.init_hdf5(filename, start_freq, stop_freq, num_points, rbw)
 
-        self.sa.write("INIT:CONT ON")
+        self.conn.write("INIT:CONT ON")
 
-        self.sa.write("DET SAMPLE")
-        self.sa.write("DISP:TRAC1:MODE MAXH")
-        self.sa.write("DISP:TRAC:Y:SCAL 100")
+        self.conn.write("DET SAMPLE")
+        self.conn.write("DISP:TRAC1:MODE MAXH")
+        self.conn.write("DISP:TRAC:Y:SCAL 100")
 
-        self.sa.write("FORM REAL,32")
+        self.conn.write("FORM REAL,32")
 
         try:
             while True:
-                self.sa.write("INIT:CONT ON")
+                self.conn.write("INIT:CONT ON")
 
                 time.sleep(self.maxhold)
-                self.sa.write("INIT:CONT OFF")
-                self.sa.write("TRAC:CLE")
+                self.conn.write("INIT:CONT OFF")
+                self.conn.write("TRAC:CLE")
 
-                trace = self.sa.query_binary_values(
+                trace = self.conn.query_binary_values(
                     "TRAC:DATA? TRACE1",
                     datatype='f',
                     container=np.array
                 )
 
-                dt = datetime.now(timezone.utc)
-                timestamp = int(dt.timestamp() * 1000)
-
-                spec, ts = self.open_hdf5()
-
-                n = spec.shape[0]
-                spec.resize(n+1,axis=0)
-                spec[n] = trace
-                ts.resize(n+1,axis=0)
-                ts[n] = timestamp
-
-                self.close_hdf5()
-
-                log.info(f"cycle {n} saved")
+                self.write_hdf5(trace)
 
         except KeyboardInterrupt:
             log.info("Stopping")
             self.close_hdf5()
-
 
 if __name__ == "__main__":
     import argparse
@@ -212,6 +239,6 @@ if __name__ == "__main__":
     else:
         outfile = f'{tstr}_{Path(args.config_file).stem}'
 
-    m = Analyzer(args.visa_address)
+    m = FSL18(args.visa_address)
     m.config(config)
     m.run(outfile)

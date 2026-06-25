@@ -59,6 +59,8 @@ then install the dependencies with:
 
     python -m pip install -r requirements.txt
 
+
+
 To read the antenna position from the Field System shared memory, the software must
 know which station-code variables contain the azimuth and elevation values and where
 these variables are located within the shared memory structure.
@@ -130,12 +132,12 @@ Once you are sure everything is alright, start the real scan with
 Using the analyzer interface
 ----------------------------
 
-The `analyzer.py` scripts takes a configuration file as first parameter and a  VISA device address as 
-second mandatory parameter, e.g.:
+The `analyzer.py` script requires two command-line arguments: a configuration file and the VISA address of the
+spectrum analyzer. For example:
 
     python analyzer.py sband.cnf TCPIP0::10.10.10.152::INSTR
 
-with `sband.cnf`:
+Example configuration file (sband.cnf):
 
     START_FREQ=20e6
     STOP_FREQ=500e6
@@ -158,8 +160,8 @@ Any subset of these parameters may be specified, and the configuration file may 
 Parameters that are omitted will retain their current values on the instrument, allowing the
 existing analyzer configuration to be used unchanged.
 
-Run a scan
-----------
+Run an experiment
+-----------------
 
 Start both scripts at roughly the same time to generate the position and spectra datasets. When the scan
 finishes, stop the analyzer script with CTRL-C.
@@ -167,3 +169,26 @@ finishes, stop the analyzer script with CTRL-C.
 Visualization
 -------------
 
+Create a `data` folder in the program directory and, inside it, create one subdirectory for each
+experiment. The experiment directories may have any name. Copy both HDF5 files produced by an
+experiment into the corresponding directory.
+
+The visualization software automatically identifies the position file and the spectra file based on
+their file sizes. In most cases, the spectra file is significantly larger than the position file.
+
+The user interface consists of three linked plots:
+
+- Top left: Displays the maximum spectrum over the entire dataset together with its 99th percentile.
+- Bottom: Displays an intensity map showing the maximum signal intensity for each azimuth/elevation bin.
+- Top right: Displays the maximum spectrum corresponding to the currently selected azimuth/elevation
+region.
+
+The plots are interactive:
+
+1. Selecting a frequency range in the top-left spectrum plot updates the intensity map to show only 
+   data within the selected frequency interval.
+2. Selecting an azimuth/elevation region in the intensity map updates the top-right spectrum plot
+   to display the maximum spectrum for the selected area.
+
+This allows you to quickly identify interference sources in both frequency and sky position and to
+examine their spectral characteristics in detail.
