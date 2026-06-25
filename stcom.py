@@ -44,6 +44,7 @@ if __name__ == '__main__':
 
     cleanup()
     args = parser.parse_args()
+    print(args)
     azoff = offset(args.azvar)
     cleanup()
     eloff = offset(args.elvar)
