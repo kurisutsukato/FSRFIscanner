@@ -185,6 +185,7 @@ class Antenna:
     def activate(self):
         log.info('activating')
         self.execute('antenna=ACTI')
+        self.az, self.el = self.get_azel()
         time.sleep(0.5)
 
     def deactivate(self):
