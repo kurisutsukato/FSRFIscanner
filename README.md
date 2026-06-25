@@ -53,9 +53,13 @@ The required python packages can easily be installed via `pip`.
 Create a virtual python environment
 
     python -m venv .venv
+
+In case a `command not found` error is reported, try again with `python3` instead.
+Activate the new python environment:
+
     . .venv/bin/activate
 
-then install the dependencies with:
+and install the dependencies with:
 
     python -m pip install -r requirements_xxxx.txt
 
