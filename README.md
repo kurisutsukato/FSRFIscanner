@@ -9,8 +9,8 @@ scanner.
 records the antenna pointing position along with a UTC timestamp and
 stores the data in an HDF5 file.
 
-`analyzer.py` can be run on any computer with TCP/IP access to a
-VISA-compatible spectrum analyzer. It continuously acquires the current
+`analyzer.py` can be run on any computer with remote access to a
+spectrum analyzer. It continuously acquires the current
 spectrum trace, timestamps it in UTC, and stores the data in an HDF5
 file.
 
