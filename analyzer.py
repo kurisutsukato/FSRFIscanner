@@ -122,13 +122,10 @@ class Analyzer:
 
 
     def config(self, kw):
-        print(kw)
-
         if 'pts' in kw:
             self.sa.write(f"SWE:POIN {kw['pts']}")
         if 'rbw' in kw:
             self.sa.write(f"BAND {kw['rbw']}")
-
         if 'start_freq' in kw:
             self.sa.write(f"FREQ:STAR {kw['start_freq']}")
         if 'stop_freq' in kw:

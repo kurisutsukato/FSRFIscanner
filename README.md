@@ -1,9 +1,9 @@
 FSRFIscanner
 ------------
 
-FSRFIscanner is a collection of Python scripts that transform a
-Field System–controlled radio telescope into an RFI (Radio Frequency
-Interference) scanner.
+FSRFIscanner is a collection of Python scripts that enables a Field
+System–controlled radio telescope to be used as an RFI (Radio Frequency Interference)
+scanner.
 
 `antenna_control.py`, running on the Field System computer, continuously
 records the antenna pointing position along with a UTC timestamp and
@@ -20,7 +20,8 @@ generates spectral intensity maps. It provides interactive tools for
 exploring the data, allowing the user to filter by frequency range,
 azimuth/elevation coordinates, or both.
 
-The latter two scripts run on linux and windows.
+The latter two scripts run on linux and windows, the former naturally on the
+Field System linux computer.
 
 Technical prerequisites
 -----------------------
@@ -62,7 +63,8 @@ To read the antenna position from the Field System shared memory, the software m
 know which station-code variables contain the azimuth and elevation values and where
 these variables are located within the shared memory structure.
 
-The script `stcom.py` assists with this task. It looks for `stcom.h` either in its
+The script `stcom.py` assists with this task. Under the hood it calls a C compiler
+which is usually installed by default on a field system computer. It looks for `stcom.h` either in its
 standard location (`/usr2/st/include`) or in the current working directory. When
 executed successfully, it generates a `.env` file containing the shared-memory
 offsets of the relevant azimuth and elevation variables. You need to provide the variable
@@ -70,7 +72,7 @@ names as command line argument, e.g.
 
     python stcom.py Azactpos Elactpos
 
-Adapt the variables according to your `stcom.h`.
+Adapt the variable names according to your `stcom.h`.
  
 These offsets are subsequently used by antenna_control.py to access the antenna
 position data directly from shared memory.
@@ -128,5 +130,40 @@ Once you are sure everything is alright, start the real scan with
 Using the analyzer interface
 ----------------------------
 
+The `analyzer.py` scripts takes a configuration file as first parameter and a  VISA device address as 
+second mandatory parameter, e.g.:
 
+    python analyzer.py sband.cnf TCPIP0::10.10.10.152::INSTR
+
+with `sband.cnf`:
+
+    START_FREQ=20e6
+    STOP_FREQ=500e6
+    POINTS=1001
+    RBW=1e6
+    MAXHOLD=2
+
+The configuration consists of `parameter=value` pairs. The following parameters are supported:
+
+- PTS - number of points of the trace
+- RBW - resolution bandwidth (Hz)
+- START_FREQ - start frequency (Hz)
+- STOP_FREQ - stop frequency (Hz)
+- CENTER - center frequency (Hz)
+- SPAN - frequency span (Hz)
+- LEVEL - reference level (dB)
+- MAXHOLD - maxhold time (s)
+
+Any subset of these parameters may be specified, and the configuration file may even be empty.
+Parameters that are omitted will retain their current values on the instrument, allowing the
+existing analyzer configuration to be used unchanged.
+
+Run a scan
+----------
+
+Start both scripts at roughly the same time to generate the position and spectra datasets. When the scan
+finishes, stop the analyzer script with CTRL-C.
+
+Visualization
+-------------
 
