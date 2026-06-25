@@ -27,7 +27,7 @@ long offset() {{
 	return (long)(&((struct stcom *)NULL)->{});
 }}
     """.format(symbol)
-
+    print(source)
     ffi.set_source("_stcom", header+source)
     ffi.cdef("""long offset();""")
     ffi.compile()
@@ -46,8 +46,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(args)
     azoff = offset(args.azvar)
+    print(azoff)
     cleanup()
     eloff = offset(args.elvar)
+    print(eloff)
     cleanup()
 
     print(f'AZOFFSET={azoff}\nELOFFSET={eloff}', file=open('.env', 'w'))
