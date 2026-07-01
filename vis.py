@@ -13,7 +13,7 @@ from applayout import gen
 
 experiment_cache = {}
 
-def plot(exp, frng=None, base_freq=0):
+def plot(exp, frng=None, base_freq=0, fill_gaps=True):
     binned = experiment_cache[exp['foldername']]
 
     azaxis = exp['azaxis']
@@ -52,15 +52,16 @@ def plot(exp, frng=None, base_freq=0):
     tarr[y-y.min(), x-x.max()] = dtstr
     tarr = tarr.T
 
-    mask = np.isnan(arr)
+    if fill_gaps:
+        mask = np.isnan(arr)
 
-    # For each row, build indices of last non-NaN value seen
-    idx = np.where(~mask, np.arange(arr.shape[1]), 0)
-    idx = np.maximum.accumulate(idx, axis=1)
+        # For each row, build indices of last non-NaN value seen
+        idx = np.where(~mask, np.arange(arr.shape[1]), 0)
+        idx = np.maximum.accumulate(idx, axis=1)
 
-    # Fill NaNs from the left
-    arr = arr[np.arange(arr.shape[0])[:, None], idx]
-    tarr = tarr[np.arange(tarr.shape[0])[:, None], idx]
+        # Fill NaNs from the left
+        arr = arr[np.arange(arr.shape[0])[:, None], idx]
+        tarr = tarr[np.arange(tarr.shape[0])[:, None], idx]
 
     fig = go.Figure(data=go.Heatmap(z=arr,
                                     x=azaxis,
@@ -86,8 +87,7 @@ def fmt_dt(dt):
     return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP,
-                                      "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
-                                      ])
+                                 "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"])
 
 folders = [p for p in Path("data").iterdir() if p.is_dir()]
 options = [{"label": item.stem, "value": str(item)} for item in folders]
@@ -205,7 +205,6 @@ def update_crop(azel_selection, experiment, base_freq):
     data = []
     nspec = 0
     with h5py.File(experiment['specfile'], 'r') as f:
-        #freq = np.asarray(f.attrs['frequencies'][:])
         freq = f.attrs['frequencies']+base_freq
         spectra = f['spectra']['spectrum']
         crop = binned.loc[binned.az.between(*xr/experiment['azbin']) & binned.el.between(*yr/experiment['elbin'])]
@@ -213,10 +212,10 @@ def update_crop(azel_selection, experiment, base_freq):
             val = np.asarray(spectra[df['spec_idx'].values])
             nspec += val.shape[0]
             data.append(val.max(axis=0))
-    y = np.asarray(data).max(axis=0)
+    ymax = np.asarray(data).max(axis=0)
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=freq, y=y))
+    fig.add_trace(go.Scatter(x=freq, y=ymax, name='max'))
     fig.update_layout(margin=dict(l=5, r=5, t=20, b=5),
                       xaxis=dict(title_text='Frequency (Hz)'))
     fig.update_xaxes(
@@ -376,12 +375,16 @@ def update_map_selection(selected, freq):
     Output("map", "figure"),
     Input("experiment", "data"),
     Input("freq-selection", "data"),
+    Input("fill-gaps", "value"),
     State("azel-selection", "data"),
     State("base-freq", "value"),
 )
-def update_map(experiment, frng, azel_selection, base_freq):
+def update_map(experiment, frng, fill_gaps, azel_selection, base_freq):
+    if not 'foldername' in experiment:
+        return no_update
+
     base_freq = base_freq or 0
-    fig = plot(experiment, frng, base_freq)
+    fig = plot(experiment, frng, base_freq, 'fill' in fill_gaps)
 
     if azel_selection:
         xr, yr = azel_selection

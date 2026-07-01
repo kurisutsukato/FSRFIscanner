@@ -30,6 +30,13 @@ def gen(plot={}, options={}):
                         ),
                         html.Div(id="info-folder"),
                         html.Div(style={"marginLeft": "auto"}),
+                        dbc.Checklist(
+                            options=[{"label": "Fill Gaps", "value": "fill"},],
+                            value=['fill'],
+                            id="fill-gaps",
+                            switch=True,
+                            style={"margin-right": "20px"}
+                        ),
                         html.Label('base frequency (Hz)'),
                         dcc.Input(id='base-freq', value=0, type='number', style={"flex": "0 1 auto", "width": "300px"})
                     ], style={"display": "flex", "gap": "10px", "padding": "10px"}),
