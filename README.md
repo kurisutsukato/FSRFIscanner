@@ -124,8 +124,8 @@ moves the antenna by +1° in elevation at a slew rate of 0.1°/s.
 
 The commands are executed sequentially in the order in which they appear
 in the configuration file, thereby defining the complete scanning
-pattern. The `gensky.py` script generates a full sky scan (saved as `fullsky.cnf`)
-starting at 0,2 az/el position.
+pattern. The `gensky.py` script demonstrates how to generate a full sky scan
+starting at 0,2 az/el position. It creates a config file 'fullsky.cnf'.
 
 Start the scan in simulation mode (no commands are sent to the anntena) by executing
 
