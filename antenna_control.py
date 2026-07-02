@@ -144,6 +144,7 @@ class Antenna:
             self.thread.join()
         except AttributeError:
             pass
+        print(f'data saved to {self.output}')
 
     def move_rel(self, axis, delta, speed):
         speed = speed if delta > 0 else -speed
@@ -242,19 +243,19 @@ class Antenna:
     def scan(self, conf_file):
         tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
         if conf_file is None:
-            output = f'{tstr}.h5'
-            self.acquire(output)
+            self.output = f'{tstr}.h5'
+            self.acquire(self.output)
             while True:
                 time.sleep(1000)
         else:
             start, coords = load_cnf(conf_file)
 
-            output = f'{tstr}_{Path(conf_file).stem}.h5'
+            self.output = f'{tstr}_{Path(conf_file).stem}.h5'
 
             self.activate()
             self.move_to(*start)
             time.sleep(2)
-            self.acquire(output)
+            self.acquire(self.output)
             for pos in coords:
                 self.move_rel(*pos)
                 log.info(f'{self.get_azel()}')
