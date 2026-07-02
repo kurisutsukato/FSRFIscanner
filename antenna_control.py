@@ -51,7 +51,6 @@ def acquisition_loop(get_azel, h5file, ts_dset,
         t0 = time.monotonic()
 
         az, el, azrate, elrate = get_azel()
-        #timestamp = datetime.utcnow().isoformat()
         dt = datetime.now(timezone.utc)
         timestamp = int(dt.timestamp()*1000)
 
@@ -231,7 +230,7 @@ class Antenna:
             self.az += self.az_speed * (now - self.t0)
             self.el += self.el_speed * (now - self.t0)
             self.t0 = now
-            return self.az, self.el
+            return self.az, self.el, 0, 0
         else:
             offsets = [read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]]
             if AZRATEOFFSET and ELRATEOFFSET:
@@ -245,6 +244,8 @@ class Antenna:
         if conf_file is None:
             output = f'{tstr}.h5'
             self.acquire(output)
+            while True:
+                time.sleep(1000)
         else:
             start, coords = load_cnf(conf_file)
 
