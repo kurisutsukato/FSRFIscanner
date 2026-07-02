@@ -99,7 +99,7 @@ class Antenna:
         if simulation:
             log.info('using dummy ACU')
         else:
-            log.info('taking control over the ACU')
+            log.info('connecting to ACU')
 
         signal.signal(signal.SIGINT, self._exit)
         signal.signal(signal.SIGTERM, self._exit)
