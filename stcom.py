@@ -39,18 +39,26 @@ if __name__ == '__main__':
     import argparse
     import os
 
+    env_var_mapping = {'azvar':'AZOFFSET','elvar':'ELOFFSET','azratevar':'AZRATEOFFSET','elratevar':'ELRATEOFFSET'}
+
     parser = argparse.ArgumentParser()
     parser.add_argument('azvar', help='name of the station SHM variable for the actual azimuth position, e.g. Azactpos')
     parser.add_argument('elvar', help='name of the station SHM variable for the actual elevation position, e.g. Elactpos')
+    parser.add_argument('azratevar', help='name of the station SHM variable for the actual azimuth rate, e.g. Azactrate', nargs='?')
+    parser.add_argument('elratevar', help='name of the station SHM variable for the actual elevation rate, e.g. Elactrate', nargs='?')
 
-    cleanup()
+    out = {}
+
     args = parser.parse_args()
-    azoff = offset(args.azvar)
-    cleanup()
-    eloff = offset(args.elvar)
+    for k,v in vars(args).items():
+        if v:
+            cleanup()
+            out[env_var_mapping[k]] = offset(v)
     cleanup()
 
-    print(f'AZOFFSET={azoff}\nELOFFSET={eloff}', file=open('.env', 'w'))
+    out = '\n'.join(f'{k}={v}' for k,v in out.items())
+    with open('.env', 'w') as f:
+        f.write(out)
     print('done')
 
     

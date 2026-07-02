@@ -30,6 +30,8 @@ finally:
     try:
         AZOFFSET = int(os.environ['AZOFFSET'])
         ELOFFSET = int(os.environ['ELOFFSET'])
+        AZRATEOFFSET = int(os.environ.get('AZRATEOFFSET', -1))
+        ELRATEOFFSET = int(os.environ.get('ELRATEOFFSET', -1))
     except KeyError:
         raise Exception('run stcom.py first')
 
@@ -41,13 +43,14 @@ def load_cnf(filename):
         a,b = f.readline().strip().split(',')
         return (int(a),int(b)),[(k, float(l), float(m)) for row in f for k, l, m in [row.strip().split(',')]]
 
-def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
+def acquisition_loop(get_azel, h5file, ts_dset,
+                     az_dset, el_dset, azr_dset, elr_dset):
     period = 0.1  # seconds
 
     while not stop_event.is_set():
         t0 = time.monotonic()
 
-        az, el = get_azel()
+        az, el, azrate, elrate = get_azel()
         #timestamp = datetime.utcnow().isoformat()
         dt = datetime.now(timezone.utc)
         timestamp = int(dt.timestamp()*1000)
@@ -59,11 +62,15 @@ def acquisition_loop(get_azel, h5file, ts_dset, az_dset, el_dset):
             ts_dset.resize(n + 1, axis=0)
             az_dset.resize(n + 1, axis=0)
             el_dset.resize(n + 1, axis=0)
+            azr_dset.resize(n + 1, axis=0)
+            elr_dset.resize(n + 1, axis=0)
 
             # store structured entry
             ts_dset[n] = timestamp
             az_dset[n] = az
             el_dset[n] = el
+            azr_dset[n] = azrate
+            elr_dset[n] = elrate
 
             # optional:
             h5file.flush()
@@ -102,7 +109,7 @@ class Antenna:
         self.stop()
         sys.exit()
 
-    def aquire(self, filename, append=False):
+    def acquire(self, filename, append=False):
         if filename.split('.')[-1] != 'h5':
             filename = filename + '.h5'
 
@@ -120,13 +127,15 @@ class Antenna:
 
         az_dset = self.h5.require_dataset("az", shape=(0,), maxshape=(None,), chunks=(1024,), dtype=np.float64)
         el_dset = self.h5.require_dataset("el", shape=(0,), maxshape=(None,), chunks=(1024,), dtype=np.float64)
+        azr_dset = self.h5.require_dataset("azrate", shape=(0,), maxshape=(None,), chunks=(1024,), dtype=np.float64)
+        elr_dset = self.h5.require_dataset("elrate", shape=(0,), maxshape=(None,), chunks=(1024,), dtype=np.float64)
 
         self.thread = threading.Thread(
             target=acquisition_loop,
-            args=(self.get_azel, self.h5, ts_dset, az_dset, el_dset),
+            args=(self.get_azel, self.h5, ts_dset, az_dset, el_dset, azr_dset, elr_dset),
             daemon=True,
         )
-        log.info('starting aquisition loop')
+        log.info('starting acquisition loop')
         self.thread.start()
 
     def stop(self):
@@ -168,11 +177,11 @@ class Antenna:
         self.pres(azcmd, elcmd)
 
         while True:
-            az, el = self.get_azel()
+            az, el = self.get_azel()[:2]
             if abs(az - azcmd) < 0.1 and abs(el - elcmd) < 0.1:
                 break
             time.sleep(0.2)
-        az, el = self.get_azel()
+        az, el = self.get_azel()[:2]
         log.info(f'reached {az}/{el}')
 
         self.az_target, self.el_target = azcmd, elcmd
@@ -188,7 +197,7 @@ class Antenna:
     def activate(self):
         log.info('activating')
         self.execute('antenna=ACTI')
-        self.az_target, self.el_target = self.get_azel()
+        self.az_target, self.el_target = self.get_azel()[:2]
         time.sleep(0.5)
 
     def deactivate(self):
@@ -224,29 +233,40 @@ class Antenna:
             self.t0 = now
             return self.az, self.el
         else:
-            return read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]
+            offsets = [read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]]
+            if AZRATEOFFSET and ELRATEOFFSET:
+                offsets.extend([read_shm(AZRATEOFFSET, 1, 'd')[0], read_shm(ELRATEOFFSET, 1, 'd')[0]])
+            else:
+                offsets.extend([0,0])
+            return offsets
 
     def scan(self, conf_file):
-        start, coords = load_cnf(conf_file)
-
         tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
-        output = f'{tstr}_{Path(conf_file).stem}.h5'
+        if conf_file is None:
+            output = f'{tstr}.h5'
+            self.acquire(output)
+        else:
+            start, coords = load_cnf(conf_file)
 
-        self.activate()
-        self.move_to(*start)
-        time.sleep(2)
-        self.aquire(output)
-        for pos in coords:
-            self.move_rel(*pos)
-            log.info(f'{self.get_azel()}')
-        self.stop()
+            output = f'{tstr}_{Path(conf_file).stem}.h5'
+
+            self.activate()
+            self.move_to(*start)
+            time.sleep(2)
+            self.acquire(output)
+            for pos in coords:
+                self.move_rel(*pos)
+                log.info(f'{self.get_azel()}')
+            self.stop()
 
 if __name__ == '__main__':
     import argparse
     import os
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('configfile', help='antenna control config file')
+    parser.add_argument('configfile', help='The antenna control config file contains the scanning pattern. '
+                                           'If no config file is provided, only the acquisition loop will run. This can be used '
+                                           'to record the antenna position in parallel to a running observation program.', nargs='?')
     parser.add_argument('--nosim', action='store_true', default=False, help='disable simulation mode')
     args = parser.parse_args()
 

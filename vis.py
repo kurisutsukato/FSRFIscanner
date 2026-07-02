@@ -110,11 +110,14 @@ def reload_sessions(_):
     Output("info-folder", "children"),
     Output("experiment", "data"),
     Input("folder-dropdown", "value"),
+    Input('max-rate', 'value'),
     State("experiment", "data"),
 )
-def select_folder(foldername, experiment):
+def select_folder(foldername, max_rate, experiment):
     if foldername is None:
         return no_update, no_update
+
+    max_rate = float(max_rate) or 0
 
     if not foldername in experiment:
         files = glob(foldername+'/*.h5')
@@ -126,10 +129,26 @@ def select_folder(foldername, experiment):
         acufile = files[0] if first < second else files[1]
         specfile = files[1] if first < second else files[0]
 
-        with h5py.File(acufile, 'r') as f:
+        with (h5py.File(acufile, 'r') as f):
             try:
-                dfpos = pd.DataFrame({'ts': f['timestamp'][:], 'az': f['az'][:], 'el': f['el'][:]}).astype(
-                    {'ts': np.int64})
+                if 'azrate' in f and 'elrate' in f:
+                    dfpos = pd.DataFrame({'ts': f['timestamp'][:],
+                                          'az': f['az'][:],
+                                          'el': f['el'][:],
+                                          'azrate': f['azrate'][:],
+                                          'elrate': f['elrate'][:],
+                                          }
+                                         ).astype({'ts': np.int64})
+                    if max_rate > 0:
+                        dfpos = dfpos[dfpos.azrate.abs()<max_rate]
+                        dfpos = dfpos[dfpos.elrate.abs()<max_rate]
+                else:
+                    dfpos = pd.DataFrame({'ts': f['timestamp'][:],
+                                          'az': f['az'][:],
+                                          'el': f['el'][:],
+                                          }
+                                         ).astype({'ts': np.int64})
+
             except KeyError:
                 msg = 'not a acu file'
             else:
@@ -137,6 +156,9 @@ def select_folder(foldername, experiment):
                 dtstop = datetime.fromtimestamp(dfpos.iloc[-1]['ts'] / 1000, tz=timezone.utc)
                 #experiment.update({'acufile': {'filename': acufile}})
                 msg = f'{fmt_dt(dtstart)} to {fmt_dt(dtstop)}'
+
+        if callback_context.triggered_id == 'max-rate' and not 'azrate' in dfpos.columns:
+            print('no rate information available')
 
         with h5py.File(specfile, 'r') as f:
             try:
@@ -198,7 +220,7 @@ def update_crop(azel_selection, experiment, base_freq):
     xr = np.asarray(xr).astype(int)
     yr = np.asarray(yr).astype(int)
 
-    base_freq = base_freq or 0
+    base_freq = float(base_freq) or 0
 
     binned = experiment_cache[experiment['foldername']]
 
@@ -212,7 +234,10 @@ def update_crop(azel_selection, experiment, base_freq):
             val = np.asarray(spectra[df['spec_idx'].values])
             nspec += val.shape[0]
             data.append(val.max(axis=0))
-    ymax = np.asarray(data).max(axis=0)
+    try:
+        ymax = np.asarray(data).max(axis=0)
+    except ValueError:
+        return no_update
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=freq, y=ymax, name='max'))
@@ -274,12 +299,19 @@ def update_total(experiment, base_freq, last_range):
     if 'specfile' not in experiment or experiment['specfile'] is None:
         return no_update
 
-    base_freq = base_freq or 0
+    binned = experiment_cache[experiment['foldername']]
 
+    base_freq = float(base_freq) or 0
+
+    data = []
     with h5py.File(experiment['specfile'], 'r') as f:
+        spectra = f['spectra']['spectrum']
         freq = f.attrs['frequencies']+base_freq
-        spec = np.asarray(f['spectra']['spectrum'][:]).max(axis=0)
-        p90 = np.percentile(f['spectra']['spectrum'][:], 99.9, axis=0)
+        for (az, el), df in binned.groupby(['el', 'az']):
+            data.append(spectra[df['spec_idx'].values])
+        data = np.vstack(data)
+        p90 = np.percentile(data, 99.9, axis=0)
+        spec = data.max(axis=0)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=freq, y=spec, name='max'))
@@ -383,7 +415,7 @@ def update_map(experiment, frng, fill_gaps, azel_selection, base_freq):
     if not 'foldername' in experiment:
         return no_update
 
-    base_freq = base_freq or 0
+    base_freq = float(base_freq) or 0
     fig = plot(experiment, frng, base_freq, 'fill' in fill_gaps)
 
     if azel_selection:

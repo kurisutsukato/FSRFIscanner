@@ -78,9 +78,12 @@ executed successfully, it generates a `.env` file containing the shared-memory
 offsets of the relevant azimuth and elevation variables. You need to provide the variable
 names as command line argument, e.g.
 
-    python stcom.py Azactpos Elactpos
+    python stcom.py Azactpos Elactpos [Azactrate] [Elactrate]
 
-Adapt the variable names according to your `stcom.h`.
+Adapt the variable names according to your `stcom.h`. "Azactrate" and "Elactrate" are optional. When present,
+the slewing rates will be recorded along with the position. In the visualizaton app the data can be
+filtered by a maximum slewing rate. This is useful, when a VLBI session is monitored, to exclude data
+points when the antenna was slewing rather than tracking.
  
 These offsets are subsequently used by antenna_control.py to access the antenna
 position data directly from shared memory.
@@ -135,6 +138,12 @@ Once you are sure everything is alright, start the real scan with
 
     python antenna_control.py fullsky.cnf --nosim
 
+When no config file is provided, only the position acquisition loop will run. This can be used
+to record the antenna position in parallel to a running observation program.
+
+The data is stored to a hdf5 file in the current directory with the naming pattern "<datetime>_<config file>.h5"
+or just "<datetime>.h5" in case no config file was provided.
+
 Using the analyzer interface
 ----------------------------
 
@@ -142,6 +151,8 @@ The `analyzer.py` script requires two command-line arguments: a configuration fi
 spectrum analyzer. For example:
 
     python analyzer.py sband.cnf TCPIP0::10.10.10.152::INSTR
+
+You may provide an output file name as third parameter. If absent, the output file will be named "<datetime>_<config file>.h5".
 
 Example configuration file (sband.cnf):
 
@@ -209,4 +220,19 @@ The plots are interactive:
 This allows you to quickly identify interference sources in both frequency and sky position and to
 examine their spectral characteristics in detail.
 
-![Screenshot](vis_screenshot.png)
+In case the recorded spectra have been frequency converted, you may enter the LO frequency in `base frequency`
+to correct the frequency axes.
+
+The `fill gaps` switch fills empty cells in the azimuth/elevation map by copying the value from the cell immediately to
+the left. This is useful for programmed azimuth/elevation scans, where the combination of the selected maxhold time and
+the antenna's slewing speed can leave some map cells without data. Filling these gaps results in a more continuous display.  
+
+The `max. rate` input filters data based on the antenna's slewing rate. This is useful when displaying data from,
+for example, a VLBI session, where you may wish to exclude points for which the antenna's angular rate exceeded a
+specified threshold, effectively removing periods of slewing and retaining only normal tracking data.
+
+![Screenshot](vis_screenshot1.png)
+a full sky scan in legacy S-band
+
+![Screenshot](vis_screenshot2.png)
+a subset of observations of a R1 session

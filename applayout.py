@@ -30,16 +30,20 @@ def gen(plot={}, options={}):
                         ),
                         html.Div(id="info-folder"),
                         html.Div(style={"marginLeft": "auto"}),
+                        html.Label('max. rate (º/s)', style={"flex": "0 1 auto"}),
+                        dbc.Input(id='max-rate', value=0, type='text', inputMode='numeric', pattern=r"[0-9\.e\-]*",
+                                  debounce=True, style={"flex": "0 1 auto", "margin-right": "20px", "textAlign": 'right', "width": "100px"}),
                         dbc.Checklist(
                             options=[{"label": "Fill Gaps", "value": "fill"},],
-                            value=['fill'],
+                            value=[],
                             id="fill-gaps",
                             switch=True,
                             style={"margin-right": "20px"}
                         ),
                         html.Label('base frequency (Hz)'),
-                        dcc.Input(id='base-freq', value=0, type='number', style={"flex": "0 1 auto", "width": "300px"})
-                    ], style={"display": "flex", "gap": "10px", "padding": "10px"}),
+                        dbc.Input(id='base-freq', value=0, type='text', inputMode='numeric', pattern=r"[0-9\.e\-]*",
+                                  debounce=True, style={"flex": "0 1 auto", "width": "100px", "textAlign": 'right'})
+                    ], style={"display": "flex", "gap": "10px", "padding": "10px", "alignItems": "center"}),
 
 
 

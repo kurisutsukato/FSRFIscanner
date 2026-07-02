@@ -228,7 +228,8 @@ if __name__ == "__main__":
 
     parser.add_argument("config_file", type=str, help="defines the scanning pattern")
     parser.add_argument("visa_address", type=str, help="VISA address, e.g. TCPIP0::10.10.10.152::INSTR")
-    parser.add_argument("output_file", nargs="?", help="hdf5 output file")
+    parser.add_argument("output_file", nargs="?", help="hdf5 output file, if not given, the output file will be named"
+                                                       "according to the pattern \"<datetime>_<config file>.h5\"")
     args = parser.parse_args()
 
     config = Config(args.config_file)
