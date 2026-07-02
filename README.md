@@ -141,8 +141,8 @@ Once you are sure everything is alright, start the real scan with
 When no config file is provided, only the position acquisition loop will run. This can be used
 to record the antenna position in parallel to a running observation program.
 
-The data is stored to a hdf5 file in the current directory with the naming pattern "<datetime>_<config file>.h5"
-or just "<datetime>.h5" in case no config file was provided.
+The data is stored to a hdf5 file in the current directory with the naming pattern "\<datetime\>_\<config file\>.h5"
+or just "\<datetime\>.h5" in case no config file was provided.
 
 Using the analyzer interface
 ----------------------------
@@ -152,7 +152,7 @@ spectrum analyzer. For example:
 
     python analyzer.py sband.cnf TCPIP0::10.10.10.152::INSTR
 
-You may provide an output file name as third parameter. If absent, the output file will be named "<datetime>_<config file>.h5".
+You may provide an output file name as third parameter. If absent, the output file will be named "\<datetime\>_\<config file\>.h5".
 
 Example configuration file (sband.cnf):
 
