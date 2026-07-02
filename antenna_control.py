@@ -97,9 +97,9 @@ class Antenna:
         self.t0 = time.monotonic()
 
         if simulation:
-            log.info('using dummy ACU')
+            log.info('simulation mode')
         else:
-            log.info('connecting to ACU')
+            log.info('starting communication with Field System')
 
         signal.signal(signal.SIGINT, self._exit)
         signal.signal(signal.SIGTERM, self._exit)
