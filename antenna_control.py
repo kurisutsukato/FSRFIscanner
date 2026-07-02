@@ -271,7 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('--nosim', action='store_true', default=False, help='disable simulation mode')
     args = parser.parse_args()
 
-    a = Antenna(simulation=not args.nosim)
+    a = Antenna(simulation=args.nosim is False and args.configfile is not None)
     a.scan(args.configfile)
 
 
