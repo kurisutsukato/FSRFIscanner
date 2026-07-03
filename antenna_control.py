@@ -51,7 +51,6 @@ def acquisition_loop(get_azel, h5file, ts_dset,
         t0 = time.monotonic()
 
         az, el, azrate, elrate = get_azel()
-        #timestamp = datetime.utcnow().isoformat()
         dt = datetime.now(timezone.utc)
         timestamp = int(dt.timestamp()*1000)
 
@@ -98,9 +97,9 @@ class Antenna:
         self.t0 = time.monotonic()
 
         if simulation:
-            log.info('using dummy ACU')
+            log.info('simulation mode')
         else:
-            log.info('taking control over the ACU')
+            log.info('starting communication with Field System')
 
         signal.signal(signal.SIGINT, self._exit)
         signal.signal(signal.SIGTERM, self._exit)
@@ -145,6 +144,7 @@ class Antenna:
             self.thread.join()
         except AttributeError:
             pass
+        print(f'data saved to {self.output}')
 
     def move_rel(self, axis, delta, speed):
         speed = speed if delta > 0 else -speed
@@ -231,7 +231,7 @@ class Antenna:
             self.az += self.az_speed * (now - self.t0)
             self.el += self.el_speed * (now - self.t0)
             self.t0 = now
-            return self.az, self.el
+            return self.az, self.el, 0, 0
         else:
             offsets = [read_shm(AZOFFSET, 1, 'd')[0], read_shm(ELOFFSET, 1, 'd')[0]]
             if AZRATEOFFSET and ELRATEOFFSET:
@@ -243,17 +243,19 @@ class Antenna:
     def scan(self, conf_file):
         tstr = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
         if conf_file is None:
-            output = f'{tstr}.h5'
-            self.acquire(output)
+            self.output = f'{tstr}.h5'
+            self.acquire(self.output)
+            while True:
+                time.sleep(1000)
         else:
             start, coords = load_cnf(conf_file)
 
-            output = f'{tstr}_{Path(conf_file).stem}.h5'
+            self.output = f'{tstr}_{Path(conf_file).stem}.h5'
 
             self.activate()
             self.move_to(*start)
             time.sleep(2)
-            self.acquire(output)
+            self.acquire(self.output)
             for pos in coords:
                 self.move_rel(*pos)
                 log.info(f'{self.get_azel()}')
@@ -270,7 +272,7 @@ if __name__ == '__main__':
     parser.add_argument('--nosim', action='store_true', default=False, help='disable simulation mode')
     args = parser.parse_args()
 
-    a = Antenna(simulation=not args.nosim)
+    a = Antenna(simulation=args.nosim is False and args.configfile is not None)
     a.scan(args.configfile)
 
 
