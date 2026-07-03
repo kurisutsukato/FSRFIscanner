@@ -13,7 +13,7 @@ from applayout import gen
 
 experiment_cache = {}
 
-def plot(exp, frng=None, base_freq=0, fill_gaps=True):
+def plot(exp, frng=None, fill_gaps=True):
     binned = experiment_cache[exp['foldername']]
 
     azaxis = exp['azaxis']
@@ -28,7 +28,7 @@ def plot(exp, frng=None, base_freq=0, fill_gaps=True):
             val = np.asarray(spectra[df['spec_idx'].values])
             tsval = np.asarray(timestamp[df['spec_idx'].values]).min()
             if frng is not None:
-                a,b = np.searchsorted(freq, np.asarray(frng)-base_freq)
+                a,b = np.searchsorted(freq, np.asarray(frng))
                 val = val[:,a:b]
             data.append((tsval, az, el, val.max()))
 
@@ -263,22 +263,24 @@ def update_crop(azel_selection, experiment, base_freq):
     Output("freq-selection", "data"),
     Input('total', 'selectedData'),
     Input('experiment', 'data'),
-
+    State('base-freq', 'value'),
     prevent_initial_call=True
 )
-def update_total_selection(selected, experiment):
+def update_total_selection(selected, experiment, base_freq):
     if not selected or "range" not in selected:
         return no_update, no_update
     patch = Patch()
 
-    x0, x1 = selected["range"]["x"]
+    base_freq = float(base_freq) or 0
+
+    x0, x1 = np.asarray(selected["range"]["x"])-base_freq
 
     patch["layout"]["shapes"] = [{
         "type": "rect",
         "xref": "x",
         "yref": "paper",
-        "x0": x0,
-        "x1": x1,
+        "x0": x0+base_freq,
+        "x1": x1+base_freq,
         "y0": 0,
         "y1": 1,
         "fillcolor": "rgba(255,0,0,0.2)",
@@ -289,13 +291,11 @@ def update_total_selection(selected, experiment):
 
 @app.callback(
     Output("total", "figure"),
-    #Output("last_range", "data"),
     Input("experiment", "data"),
     Input("base-freq", "value"),
     State("freq-selection", "data"),
 )
-def update_total(experiment, base_freq, last_range):
-    #xrng, yrng = loads(last_range) if last_range else (None, None)
+def update_total(experiment, base_freq, freq_sel):
     if 'specfile' not in experiment or experiment['specfile'] is None:
         return no_update
 
@@ -317,20 +317,6 @@ def update_total(experiment, base_freq, last_range):
     fig.add_trace(go.Scatter(x=freq, y=spec, name='max'))
     fig.add_trace(go.Scatter(x=freq, y=p90, name='99%'))
 
-    if False or last_range:
-        x0, x1 = last_range
-        fig.add_shape(
-            type="rect",
-            xref="x",
-            yref="paper",
-            x0=x0,
-            x1=x1,
-            y0=0,
-            y1=1,
-            fillcolor="rgba(255,0,0,0.2)",
-            line_width=0,
-        )
-
     fig.update_layout(dragmode="select",
                       clickmode='event+select',
                       legend=dict(
@@ -345,8 +331,8 @@ def update_total(experiment, base_freq, last_range):
                       xaxis=dict(title_text='Frequency (Hz)', fixedrange=True, tickformat="~s", exponentformat="SI")
                       )
 
-    if last_range:
-        x0, x1 = last_range
+    if freq_sel:
+        x0, x1 = np.asarray(freq_sel)+base_freq
         fig.update_layout(
             selections=[
                 dict(
@@ -376,10 +362,9 @@ def update_total(experiment, base_freq, last_range):
     Output("map", "figure"),
     Output("azel-selection", "data"),
     Input('map', 'selectedData'),
-    Input("freq-selection", "data"),
     prevent_initial_call=True
 )
-def update_map_selection(selected, freq):
+def update_map_selection(selected):
     patch = Patch()
 
     # remove previous selection
@@ -416,7 +401,7 @@ def update_map(experiment, frng, fill_gaps, azel_selection, base_freq):
         return no_update
 
     base_freq = float(base_freq) or 0
-    fig = plot(experiment, frng, base_freq, 'fill' in fill_gaps)
+    fig = plot(experiment, frng, 'fill' in fill_gaps)
 
     if azel_selection:
         xr, yr = azel_selection

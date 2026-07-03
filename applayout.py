@@ -8,7 +8,6 @@ def gen(plot={}, options={}):
             dcc.Location(id="url", refresh=False),
             dcc.Store(id='experiment', data={}),
 
-            #dcc.Store(id='last_range'),
             dcc.Store(id="files"),
 
             dcc.Store(id="freq-selection"),
