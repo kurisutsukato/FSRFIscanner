@@ -89,6 +89,8 @@ def fmt_dt(dt):
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP,
                                  "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"])
 
+
+Path("data").mkdir(exist_ok=True)
 folders = [p for p in Path("data").iterdir() if p.is_dir()]
 options = [{"label": item.stem, "value": str(item)} for item in folders]
 
@@ -148,6 +150,8 @@ def select_folder(foldername, max_rate, experiment):
                                           'el': f['el'][:],
                                           }
                                          ).astype({'ts': np.int64})
+
+                dfpos.loc[dfpos.az>=180, "az"] -= 360
 
             except KeyError:
                 msg = 'not a acu file'
