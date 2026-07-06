@@ -189,11 +189,11 @@ def select_folder(foldername, max_rate, experiment):
         dtstart = datetime.fromtimestamp(merged.iloc[0]['ts'], tz=timezone.utc)
         dtstop = datetime.fromtimestamp(merged.iloc[-1]['ts'], tz=timezone.utc)
 
-        azbin = 4
-        elbin = 1
+        azbin = 9
+        elbin = 9
         binned = merged.copy()
-        binned['el'] = (binned['el'] / elbin + 0.5).astype(int)
-        binned['az'] = (binned['az'] / azbin + .5).astype(int)
+        binned['el'] = (binned['el'] / elbin).astype(int)
+        binned['az'] = (binned['az'] / azbin).astype(int)
 
         elaxis = np.arange(binned.el.min(), binned.el.max() + 1) * elbin
         azaxis = np.arange(binned.az.min(), binned.az.max() + 1) * azbin
@@ -214,15 +214,28 @@ def select_folder(foldername, max_rate, experiment):
     Input('azel-selection', 'data'),
     Input('experiment', 'data'),
     Input('base-freq', 'value'),
+    Input("map", "clickData"),
     prevent_initial_call=True
 )
-def update_crop(azel_selection, experiment, base_freq):
+def update_crop(azel_selection, experiment, base_freq, point_selection):
     try:
         xr, yr = azel_selection
-    except TypeError:
-        return no_update
-    xr = np.asarray(xr).astype(int)
-    yr = np.asarray(yr).astype(int)
+    except (TypeError, ValueError):
+        try:
+            pt = point_selection["points"][0]
+        except (TypeError, KeyError):
+            return no_update
+        else:
+            print('point selection')
+            xr = np.asarray([pt['x']]).astype(int)
+            yr = np.asarray([pt['y']]).astype(int)
+            textpos = f"{xr[0]:d}º azimuth<br>{yr[0]}º elevation"
+    else:
+        print('range selection')
+        xr = np.asarray(xr).astype(int)
+        yr = np.asarray(yr).astype(int)
+        textpos = f"{xr[0]:d}-{xr[1]:d}º azimuth<br>{yr[0]}-{yr[1]}º elevation"
+
 
     base_freq = float(base_freq) or 0
 
@@ -233,7 +246,13 @@ def update_crop(azel_selection, experiment, base_freq):
     with h5py.File(experiment['specfile'], 'r') as f:
         freq = f.attrs['frequencies']+base_freq
         spectra = f['spectra']['spectrum']
-        crop = binned.loc[binned.az.between(*xr/experiment['azbin']) & binned.el.between(*yr/experiment['elbin'])]
+        if len(xr) == 1:
+            crop = binned.loc[(binned['az'] == xr[0]//experiment['azbin']) & (binned['el'] == yr[0]//experiment['elbin'])]
+            print(crop)
+            print(xr, yr)
+            print(binned)
+        else:
+            crop = binned.loc[binned.az.between(*xr//experiment['azbin']) & binned.el.between(*yr//experiment['elbin'])]
         for (az, el), df in crop.groupby(['el', 'az']):
             val = np.asarray(spectra[df['spec_idx'].values])
             nspec += val.shape[0]
@@ -256,7 +275,7 @@ def update_crop(azel_selection, experiment, base_freq):
         y=0.98,
         xref="paper",
         yref="paper",
-        text=f"{xr[0]:d}-{xr[1]:d}º azimuth<br>{yr[0]}-{yr[1]}º elevation<br>max of {nspec} spectra",
+        text=textpos+f"<br>max of {nspec} spectra",
         showarrow=False,
         bgcolor="rgba(255,255,255,0.8)"
     )
@@ -366,9 +385,10 @@ def update_total(experiment, base_freq, freq_sel):
     Output("map", "figure"),
     Output("azel-selection", "data"),
     Input('map', 'selectedData'),
+    Input('map', 'clickData'),
     prevent_initial_call=True
 )
-def update_map_selection(selected):
+def update_map_selection(selected, pt_selection):
     patch = Patch()
 
     # remove previous selection
@@ -389,7 +409,7 @@ def update_map_selection(selected):
         })
 
         return patch, (xr, yr)
-    return no_update, no_update
+    return patch, []
 
 # ---- Main figure update ----
 @app.callback(
