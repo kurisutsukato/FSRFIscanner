@@ -13,18 +13,44 @@ from applayout import gen
 
 experiment_cache = {}
 
+def fill(arr, tarr):
+    mask = np.isnan(arr)
+
+    # Forward fill (left -> right)
+    idx_fwd = np.where(~mask, np.arange(arr.shape[1]), 0)
+    idx_fwd = np.maximum.accumulate(idx_fwd, axis=1)
+
+    arr_fwd = arr[np.arange(arr.shape[0])[:, None], idx_fwd]
+    tarr_fwd = tarr[np.arange(tarr.shape[0])[:, None], idx_fwd]
+
+    # Backward fill (right -> left)
+    idx_bwd = np.where(~mask, np.arange(arr.shape[1]), arr.shape[1] - 1)
+    idx_bwd = np.minimum.accumulate(idx_bwd[:, ::-1], axis=1)[:, ::-1]
+
+    arr_bwd = arr[np.arange(arr.shape[0])[:, None], idx_bwd]
+    tarr_bwd = tarr[np.arange(tarr.shape[0])[:, None], idx_bwd]
+
+    # Use forward fill where possible, otherwise backward fill
+    arr = np.where(np.isnan(arr_fwd), arr_bwd, arr_fwd)
+    tarr = np.where(np.isnan(arr_fwd), tarr_bwd, tarr_fwd)
+
+    return arr, tarr
+
 def plot(exp, frng=None, fill_gaps=True):
     binned = experiment_cache[exp['foldername']]
 
-    azaxis = exp['azaxis']
-    elaxis = exp['elaxis']
+    azaxis = np.asarray(exp['azaxis'])
+    elaxis = np.asarray(exp['elaxis'])
+
+    azbin = exp['azbin']
+    elbin = exp['elbin']
 
     data = []
     with h5py.File(exp['specfile'], 'r') as f:
         spectra = f['spectra']['spectrum']
         timestamp = f['spectra']['timestamp']
         freq = f.attrs['frequencies']
-        for (az, el), df in binned.groupby(['el', 'az']):
+        for (el, az), df in binned.groupby(['el', 'az']):
             val = np.asarray(spectra[df['spec_idx'].values])
             tsval = np.asarray(timestamp[df['spec_idx'].values]).min()
             if frng is not None:
@@ -37,35 +63,27 @@ def plot(exp, frng=None, fill_gaps=True):
     dtstr = np.array([
         datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
         for ts in tmp[:, 0]/1000
-    ])
+    ], dtype='<U16')
 
     x = tmp[:, 1].astype(int)
     y = tmp[:, 2].astype(int)
     v = tmp[:, 3]
 
+    #arr = v.reshape((y.max()-y.min() + 1, x.max()-x.min() + 1))
     arr = np.zeros((y.max()-y.min() + 1, x.max()-x.min() + 1))
-    tarr = np.empty(arr.shape, dtype='<U16')
-    arr[y-y.min(), x-x.max()] = v
+    arr[y-y.min(),x-x.min()] = v
     arr[arr==0] = np.nan
-    arr = arr.T
 
-    tarr[y-y.min(), x-x.max()] = dtstr
-    tarr = tarr.T
+    #tarr = dtstr.reshape((y.max()-y.min() + 1, x.max()-x.min() + 1))
+    tarr = np.zeros(arr.shape, dtype='<U16')
+    tarr[y-y.min(),x-x.min()] = dtstr
 
     if fill_gaps:
-        mask = np.isnan(arr)
-
-        # For each row, build indices of last non-NaN value seen
-        idx = np.where(~mask, np.arange(arr.shape[1]), 0)
-        idx = np.maximum.accumulate(idx, axis=1)
-
-        # Fill NaNs from the left
-        arr = arr[np.arange(arr.shape[0])[:, None], idx]
-        tarr = tarr[np.arange(tarr.shape[0])[:, None], idx]
+        arr, tarr = fill(arr, tarr)
 
     fig = go.Figure(data=go.Heatmap(z=arr,
-                                    x=azaxis,
-                                    y=elaxis,
+                                    x=azaxis+0.5*azbin,
+                                    y=elaxis+0.5*elbin,
                                     customdata=tarr,
                                     hovertemplate=
                                     "azimuth: %{x}º<br>" +
@@ -79,6 +97,19 @@ def plot(exp, frng=None, fill_gaps=True):
                       margin=dict(l=5, r=5, t=20, b=5),
                       xaxis=dict(title_text='Azimuth', fixedrange=True),
                       yaxis=dict(title_text='Elevation', fixedrange=True))
+
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=azaxis * azbin,
+        ticktext=azaxis * azbin,
+    )
+
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=elaxis * elbin,
+        ticktext=elaxis * elbin,
+    )
+
     return fig
 
 def fmt_dt(dt):
@@ -189,8 +220,8 @@ def select_folder(foldername, max_rate, experiment):
         dtstart = datetime.fromtimestamp(merged.iloc[0]['ts'], tz=timezone.utc)
         dtstop = datetime.fromtimestamp(merged.iloc[-1]['ts'], tz=timezone.utc)
 
-        azbin = 9
-        elbin = 9
+        azbin = 4
+        elbin = 1
         binned = merged.copy()
         binned['el'] = (binned['el'] / elbin).astype(int)
         binned['az'] = (binned['az'] / azbin).astype(int)
@@ -218,6 +249,9 @@ def select_folder(foldername, max_rate, experiment):
     prevent_initial_call=True
 )
 def update_crop(azel_selection, experiment, base_freq, point_selection):
+    elbin = experiment['elbin']
+    azbin = experiment['azbin']
+
     try:
         xr, yr = azel_selection
     except (TypeError, ValueError):
@@ -226,12 +260,10 @@ def update_crop(azel_selection, experiment, base_freq, point_selection):
         except (TypeError, KeyError):
             return no_update
         else:
-            print('point selection')
-            xr = np.asarray([pt['x']]).astype(int)
-            yr = np.asarray([pt['y']]).astype(int)
+            xr = (np.asarray([pt['x']])/azbin-0.5).astype(int)
+            yr = (np.asarray([pt['y']])/elbin-0.5).astype(int)
             textpos = f"{xr[0]:d}º azimuth<br>{yr[0]}º elevation"
     else:
-        print('range selection')
         xr = np.asarray(xr).astype(int)
         yr = np.asarray(yr).astype(int)
         textpos = f"{xr[0]:d}-{xr[1]:d}º azimuth<br>{yr[0]}-{yr[1]}º elevation"
@@ -247,13 +279,10 @@ def update_crop(azel_selection, experiment, base_freq, point_selection):
         freq = f.attrs['frequencies']+base_freq
         spectra = f['spectra']['spectrum']
         if len(xr) == 1:
-            crop = binned.loc[(binned['az'] == xr[0]//experiment['azbin']) & (binned['el'] == yr[0]//experiment['elbin'])]
-            print(crop)
-            print(xr, yr)
-            print(binned)
+            crop = binned.loc[(binned['az'] == xr[0]) & (binned['el'] == yr[0])]
         else:
             crop = binned.loc[binned.az.between(*xr//experiment['azbin']) & binned.el.between(*yr//experiment['elbin'])]
-        for (az, el), df in crop.groupby(['el', 'az']):
+        for (az, el), df in crop.groupby(['az', 'el']):
             val = np.asarray(spectra[df['spec_idx'].values])
             nspec += val.shape[0]
             data.append(val.max(axis=0))
@@ -330,7 +359,7 @@ def update_total(experiment, base_freq, freq_sel):
     with h5py.File(experiment['specfile'], 'r') as f:
         spectra = f['spectra']['spectrum']
         freq = f.attrs['frequencies']+base_freq
-        for (az, el), df in binned.groupby(['el', 'az']):
+        for (az, el), df in binned.groupby(['az', 'el']):
             data.append(spectra[df['spec_idx'].values])
         data = np.vstack(data)
         p90 = np.percentile(data, 99.9, axis=0)
