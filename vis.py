@@ -8,6 +8,7 @@ from pathlib import Path
 from plotly import graph_objs as go
 import h5py
 from glob import glob
+import re
 
 from applayout import gen
 
@@ -69,12 +70,10 @@ def plot(exp, frng=None, fill_gaps=True):
     y = tmp[:, 2].astype(int)
     v = tmp[:, 3]
 
-    #arr = v.reshape((y.max()-y.min() + 1, x.max()-x.min() + 1))
     arr = np.zeros((y.max()-y.min() + 1, x.max()-x.min() + 1))
     arr[y-y.min(),x-x.min()] = v
     arr[arr==0] = np.nan
 
-    #tarr = dtstr.reshape((y.max()-y.min() + 1, x.max()-x.min() + 1))
     tarr = np.zeros(arr.shape, dtype='<U16')
     tarr[y-y.min(),x-x.min()] = dtstr
 
@@ -99,16 +98,19 @@ def plot(exp, frng=None, fill_gaps=True):
                       yaxis=dict(title_text='Elevation', fixedrange=True))
 
     fig.update_xaxes(
+        range=[-180+azbin, 180+azbin], # I am not sure why shifting by azbin is necessary
         tickmode="array",
         tickvals=azaxis * azbin,
         ticktext=azaxis * azbin,
     )
 
     fig.update_yaxes(
+        range=[0+elbin, 90+elbin],
         tickmode="array",
         tickvals=elaxis * elbin,
         ticktext=elaxis * elbin,
     )
+
 
     return fig
 
@@ -140,13 +142,33 @@ def reload_sessions(_):
     return options
 
 @app.callback(
+    Output("binning-input", "invalid"),
+    Output("binning", "data"),
+    Input("binning-input", "value"),
+)
+def validate(value):
+    if not value:
+        return False, False
+
+    mat = re.match(r"(\d+)/(\d+)", value)
+    if mat is not None:
+        a,e = int(mat[1]), int(mat[2])
+        if 0 in [a,e]:
+            return True, no_update
+        else:
+            return False, {'az': int(mat[1]), 'el': int(mat[2])}
+    else:
+        return True, no_update
+
+@app.callback(
     Output("info-folder", "children"),
     Output("experiment", "data"),
     Input("folder-dropdown", "value"),
     Input('max-rate', 'value'),
+    Input('binning', 'data'),
     State("experiment", "data"),
 )
-def select_folder(foldername, max_rate, experiment):
+def select_folder(foldername, max_rate, binning, experiment):
     if foldername is None:
         return no_update, no_update
 
@@ -220,11 +242,11 @@ def select_folder(foldername, max_rate, experiment):
         dtstart = datetime.fromtimestamp(merged.iloc[0]['ts'], tz=timezone.utc)
         dtstop = datetime.fromtimestamp(merged.iloc[-1]['ts'], tz=timezone.utc)
 
-        azbin = 4
-        elbin = 1
+        azbin = int(binning['az'])
+        elbin = int(binning['el'])
         binned = merged.copy()
-        binned['el'] = (binned['el'] / elbin).astype(int)
-        binned['az'] = (binned['az'] / azbin).astype(int)
+        binned['el'] = (binned['el'] / elbin+.5).astype(int)
+        binned['az'] = (binned['az'] / azbin+.5).astype(int)
 
         elaxis = np.arange(binned.el.min(), binned.el.max() + 1) * elbin
         azaxis = np.arange(binned.az.min(), binned.az.max() + 1) * azbin
@@ -262,7 +284,7 @@ def update_crop(azel_selection, experiment, base_freq, point_selection):
         else:
             xr = (np.asarray([pt['x']])/azbin-0.5).astype(int)
             yr = (np.asarray([pt['y']])/elbin-0.5).astype(int)
-            textpos = f"{xr[0]:d}º azimuth<br>{yr[0]}º elevation"
+            textpos = f"{pt['x']:.1f}º azimuth<br>{pt['y']:.1f}º elevation"
     else:
         xr = np.asarray(xr).astype(int)
         yr = np.asarray(yr).astype(int)

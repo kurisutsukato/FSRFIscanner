@@ -29,6 +29,12 @@ def gen(plot={}, options={}):
                         ),
                         html.Div(id="info-folder"),
                         html.Div(style={"marginLeft": "auto"}),
+                        html.Label('Az/El bin size', style={"flex": "0 1 auto"}),
+                        dcc.Store(id='binning', data={'az':4, 'el':2}),
+                        dbc.Input(id='binning-input', value='4/2', type='text', pattern=r"\d+/\d+",
+                                  debounce=True,
+                                  style={"flex": "0 1 auto", "margin-right": "20px", "textAlign": 'right',
+                                         "width": "100px"}),
                         html.Label('max. rate (º/s)', style={"flex": "0 1 auto"}),
                         dbc.Input(id='max-rate', value=0, type='text', inputMode='numeric', pattern=r"[0-9\.e\-]*",
                                   debounce=True, style={"flex": "0 1 auto", "margin-right": "20px", "textAlign": 'right', "width": "100px"}),
@@ -62,9 +68,9 @@ def gen(plot={}, options={}):
                 },
             ),
             dcc.Loading(id='map-loading', children=[dcc.Graph(id="map", figure=plot)],
-                        type="circle",
+                        type="cube",
                         target_components={'map': 'figure'},
-                        overlay_style={"visibility": "visible", "backgroundColor": "transparent"},
+                        overlay_style={"visibility": "visible", "backgroundColor": "#FFFFFF88"}, #, "backdropFilter": "blur(3px)"
                         style={"flex": 1}
                         ),
 
